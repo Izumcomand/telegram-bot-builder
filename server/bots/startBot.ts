@@ -264,7 +264,7 @@ export async function startBot(projectId: number, token: string, tokenId: number
         console.log('📦 Установка зависимостей из requirements.txt...');
         const pipCommand = process.platform === 'win32'
           ? `pip install -r "${requirementsFile}" --quiet`
-          : `pip3 install -r "${requirementsFile}" --quiet`;
+          : `pip3 install -r "${requirementsFile}" --quiet --break-system-packages`;
         execSync(pipCommand, { stdio: 'ignore' });
         console.log('✅ Зависимости установлены');
       }
