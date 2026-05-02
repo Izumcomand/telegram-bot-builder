@@ -1,6 +1,7 @@
 /**
  * @fileoverview Хук для обработки горячих клавиш форматирования
- * @description Обрабатывает комбинации Ctrl/Cmd+клавиша для быстрого форматирования
+ * @description Обрабатывает комбинации Ctrl/Cmd+клавиша для быстрого форматирования.
+ * Включает поддержку Ctrl+Shift+S для вставки спойлера.
  */
 
 import { useCallback } from 'react';
@@ -18,6 +19,8 @@ export interface UseKeyboardShortcutsOptions {
   redo: () => void;
   /** Массив опций форматирования */
   formatOptions: FormatOption[];
+  /** Callback для открытия попапа ссылки (Ctrl+K) */
+  onLinkShortcut?: () => void;
 }
 
 /**
@@ -29,7 +32,8 @@ export function useKeyboardShortcuts({
   applyFormatting,
   undo,
   redo,
-  formatOptions
+  formatOptions,
+  onLinkShortcut
 }: UseKeyboardShortcutsOptions) {
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!e.ctrlKey && !e.metaKey) return;
@@ -43,6 +47,13 @@ export function useKeyboardShortcuts({
       q: 5, // quote
       h: 6  // heading
     };
+
+    // Горячая клавиша для ссылки (Ctrl+K)
+    if (key === 'k') {
+      e.preventDefault();
+      onLinkShortcut?.();
+      return;
+    }
 
     // Обработка форматирования
     if (formatMap[key] !== undefined) {
@@ -58,6 +69,15 @@ export function useKeyboardShortcuts({
       return;
     }
 
+    // Обработка спойлера (Ctrl+Shift+S)
+    if (key === 's' && e.shiftKey) {
+      e.preventDefault();
+      /** Ищем опцию спойлера по команде, не по индексу */
+      const spoilerOption = formatOptions.find(f => f.command === 'spoiler');
+      if (spoilerOption) applyFormatting(spoilerOption);
+      return;
+    }
+
     // Обработка отмены/повтора
     if (key === 'z') {
       e.preventDefault();
@@ -67,7 +87,7 @@ export function useKeyboardShortcuts({
         undo();
       }
     }
-  }, [applyFormatting, undo, redo, formatOptions]);
+  }, [applyFormatting, undo, redo, formatOptions, onLinkShortcut]);
 
   return { handleKeyDown };
 }

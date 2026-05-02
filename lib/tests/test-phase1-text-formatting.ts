@@ -42,6 +42,29 @@
  * 35.  messageText только из спецсимволов !@#$%^&*()
  * 36.  legacy inline keyboard не ломает formatMode:"html"
  * 37.  Конфликт markdown:true + formatMode:"html" → formatMode побеждает
+ * 38.  Простая ссылка <a href> в HTML-режиме
+ * 39.  Ссылка с переменной в тексте ссылки
+ * 40.  Несколько ссылок в одном сообщении
+ * 41.  Ссылка с tg:// протоколом (упоминание пользователя)
+ * 42.  Ссылка в Markdown-режиме [текст](url)
+ * 43.  Ссылка с пустым href — генерация не падает
+ * 44.  Ссылка со спецсимволами в URL (& ? =)
+ * 45.  Ссылка с кириллицей и эмодзи в тексте ссылки
+ * 46.  Ссылка + жирный текст вместе
+ * 47.  Ссылка при formatMode:"none" — parse_mode не добавляется
+ * 48.  Ссылка с очень длинным URL (200 символов)
+ * 49.  Ссылка на message-узле (не start)
+ * 50.  Ссылка + переменная + форматирование вместе
+ * 51.  HTML-теги без formatMode → авто-определение parse_mode="HTML"
+ * 52.  HTML-теги без formatMode → parse_mode в вызове send_message
+ * 53.  Простой спойлер <tg-spoiler> в HTML-режиме
+ * 54.  Спойлер без formatMode → авто-определение parse_mode="HTML"
+ * 55.  Спойлер + обычный текст
+ * 56.  Спойлер + жирный текст
+ * 57.  Спойлер с переменной {user_name}
+ * 58.  Спойлер при formatMode:"none" — parse_mode не добавляется
+ * 59.  Несколько спойлеров в одном сообщении
+ * 60.  Спойлер на message-узле (не start)
  */
 
 import fs from 'fs';
@@ -214,7 +237,7 @@ function assertSyntax(code: string, label: string) {
 // ─── Тесты ───────────────────────────────────────────────────────────────────
 
 console.log('\n╔══════════════════════════════════════════════════════════════╗');
-console.log('║       Фаза 1 — Текст и форматирование (37 тестов)           ║');
+console.log('║       Фаза 1 — Текст и форматирование (60 тестов)           ║');
 console.log('╚══════════════════════════════════════════════════════════════╝\n');
 
 // ── 1. Обычный текст ─────────────────────────────────────────────────────────
@@ -575,6 +598,312 @@ test('37', 'Конфликт markdown:true + formatMode:"html" → formatMode п
     !code.includes('parse_mode="Markdown"') && !code.includes('ParseMode.MARKDOWN'),
     'parse_mode Markdown не должен присутствовать'
   );
+});
+
+// ── 38. Простая ссылка в HTML-режиме ─────────────────────────────────────────
+test('38', 'Простая ссылка <a href> в HTML-режиме', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="https://example.com">Нажми сюда</a>',
+    formatMode: 'html',
+  }), 't38');
+  assertSyntax(code, 't38');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+  assert(code.includes('Нажми сюда'), 'текст ссылки должен быть в коде');
+});
+
+// ── 39. Ссылка с переменной в тексте ─────────────────────────────────────────
+test('39', 'Ссылка с переменной в тексте ссылки', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="https://example.com">Привет, {user_name}!</a>',
+    formatMode: 'html',
+  }), 't39');
+  assertSyntax(code, 't39');
+  assert(code.includes('replace_variables_in_text'), 'должна вызываться замена переменных');
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+});
+
+// ── 40. Несколько ссылок в одном сообщении ────────────────────────────────────
+test('40', 'Несколько ссылок в одном сообщении', () => {
+  const code = gen(patchMessage({
+    messageText: 'Сайт: <a href="https://site.com">site.com</a> и документация: <a href="https://docs.com">docs</a>',
+    formatMode: 'html',
+  }), 't40');
+  assertSyntax(code, 't40');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('https://site.com'), 'первый URL должен быть в коде');
+  assert(code.includes('https://docs.com'), 'второй URL должен быть в коде');
+});
+
+// ── 41. Ссылка с tg:// протоколом ────────────────────────────────────────────
+test('41', 'Ссылка с tg:// протоколом (упоминание пользователя)', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="tg://user?id=123456789">Упомянуть пользователя</a>',
+    formatMode: 'html',
+  }), 't41');
+  assertSyntax(code, 't41');
+  assert(code.includes('tg://user?id=123456789'), 'tg:// URL должен быть в коде');
+});
+
+// ── 42. Ссылка в Markdown-режиме ─────────────────────────────────────────────
+test('42', 'Ссылка в Markdown-режиме [текст](url)', () => {
+  const code = gen(patchMessage({
+    messageText: '[Нажми сюда](https://example.com)',
+    formatMode: 'markdown',
+  }), 't42');
+  assertSyntax(code, 't42');
+  assert(
+    code.includes('parse_mode="Markdown"') || code.includes('ParseMode.MARKDOWN'),
+    'должен быть Markdown parse_mode'
+  );
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+});
+
+// ── 43. Ссылка с пустым href ──────────────────────────────────────────────────
+test('43', 'Ссылка с пустым href — генерация не падает', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="">Пустая ссылка</a>',
+    formatMode: 'html',
+  }), 't43');
+  assertSyntax(code, 't43');
+  assert(typeof code === 'string' && code.length > 0, 'код должен генерироваться');
+});
+
+// ── 44. Ссылка со спецсимволами в URL ────────────────────────────────────────
+test('44', 'Ссылка со спецсимволами в URL (& ? =)', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="https://example.com/path?q=hello&lang=ru">Ссылка</a>',
+    formatMode: 'html',
+  }), 't44');
+  assertSyntax(code, 't44');
+  assert(code.includes('https://example.com/path'), 'базовый URL должен быть в коде');
+});
+
+// ── 45. Ссылка с кириллицей и эмодзи в тексте ────────────────────────────────
+test('45', 'Ссылка с кириллицей и эмодзи в тексте ссылки', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="https://example.com">Перейти на сайт 🔗</a>',
+    formatMode: 'html',
+  }), 't45');
+  assertSyntax(code, 't45');
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+});
+
+// ── 46. Ссылка + жирный текст вместе ─────────────────────────────────────────
+test('46', 'Ссылка + жирный текст вместе', () => {
+  const code = gen(patchMessage({
+    messageText: '<b>Важно:</b> <a href="https://example.com">прочитай это</a>',
+    formatMode: 'html',
+  }), 't46');
+  assertSyntax(code, 't46');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('<b>') || code.includes('<strong>'), 'тег жирного текста должен быть в коде');
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+});
+
+// ── 47. Ссылка при formatMode:"none" — parse_mode не добавляется ──────────────
+test('47', 'Ссылка при formatMode:"none" — parse_mode не добавляется', () => {
+  const p = deepClone(BASE_PROJECT);
+  p.sheets[0].nodes[0].data.formatMode = 'none';
+  p.sheets[0].nodes[1].data.messageText = '<a href="https://example.com">текст</a>';
+  p.sheets[0].nodes[1].data.formatMode = 'none';
+  const code = gen(p, 't47');
+  assertSyntax(code, 't47');
+  assert(!code.includes('parse_mode'), 'parse_mode не должен быть при formatMode:none');
+});
+
+// ── 48. Ссылка с очень длинным URL ───────────────────────────────────────────
+test('48', 'Ссылка с очень длинным URL (200 символов)', () => {
+  const longUrl = 'https://example.com/' + 'a'.repeat(200);
+  const code = gen(patchMessage({
+    messageText: `<a href="${longUrl}">Длинная ссылка</a>`,
+    formatMode: 'html',
+  }), 't48');
+  assertSyntax(code, 't48');
+  assert(typeof code === 'string' && code.length > 0, 'код должен генерироваться');
+});
+
+// ── 49. Ссылка на message-узле (не start) ────────────────────────────────────
+test('49', 'Ссылка на message-узле (не start)', () => {
+  const code = gen(patchMessage({
+    messageText: '<a href="https://t.me/channel">Канал</a>',
+    formatMode: 'html',
+  }), 't49');
+  assertSyntax(code, 't49');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('https://t.me/channel'), 'URL канала должен быть в коде');
+});
+
+// ── 50. Ссылка + переменная + форматирование вместе ──────────────────────────
+test('50', 'Ссылка + переменная + форматирование вместе', () => {
+  const code = gen(patchMessage({
+    messageText: '<b>Привет, {user_name}!</b>\nПосмотри: <a href="https://example.com">сайт</a>',
+    formatMode: 'html',
+  }), 't50');
+  assertSyntax(code, 't50');
+  assert(code.includes('replace_variables_in_text'), 'должна вызываться замена переменных');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('https://example.com'), 'URL должен быть в коде');
+});
+
+// ── 51. HTML-теги без formatMode → авто-определение parse_mode="HTML" ────────
+test('51', 'HTML-теги в тексте без formatMode → авто-определение parse_mode="HTML"', () => {
+  // Симулируем узел где formatMode отсутствует но есть HTML-теги
+  const p = deepClone(BASE_PROJECT);
+  delete p.sheets[0].nodes[1].data.formatMode; // убираем formatMode
+  p.sheets[0].nodes[1].data.messageText = 'Привет! <a href="https://example.com">Нажми сюда</a>';
+  const code = gen(p, 't51');
+  assertSyntax(code, 't51');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'при наличии HTML-тегов должен автоматически добавляться parse_mode="HTML"'
+  );
+});
+
+// ── 52. HTML-теги без formatMode → parse_mode в вызове send_message ──────────
+test('52', 'HTML-теги без formatMode → parse_mode="HTML" в вызове send_message', () => {
+  const p = deepClone(BASE_PROJECT);
+  delete p.sheets[0].nodes[1].data.formatMode;
+  p.sheets[0].nodes[1].data.messageText = 'Привет! <a href="https://example.com">бот</a>.';
+  const code = gen(p, 't52');
+  assertSyntax(code, 't52');
+  // Проверяем что parse_mode="HTML" стоит РЯДОМ с send_message, а не просто где-то в коде
+  assert(
+    code.includes('send_message') && code.includes('parse_mode="HTML"'),
+    'parse_mode="HTML" должен быть в вызове send_message'
+  );
+  // Проверяем что они в одном блоке — parse_mode идёт после send_message
+  const sendIdx = code.lastIndexOf('send_message');
+  const parseIdx = code.indexOf('parse_mode="HTML"', sendIdx);
+  assert(parseIdx !== -1 && parseIdx - sendIdx < 300, 'parse_mode должен быть в том же вызове send_message');
+});
+
+// ── 53. Простой спойлер в HTML-режиме ────────────────────────────────────────
+test('53', 'Простой спойлер <tg-spoiler> в HTML-режиме', () => {
+  const code = gen(patchMessage({
+    messageText: '<tg-spoiler>секретный текст</tg-spoiler>',
+    formatMode: 'html',
+  }), 't53');
+  assertSyntax(code, 't53');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+  assert(code.includes('секретный текст'), 'текст спойлера должен быть в коде');
+});
+
+// ── 54. Спойлер без formatMode → авто-определение HTML ───────────────────────
+test('54', 'Спойлер без formatMode → авто-определение parse_mode="HTML"', () => {
+  // Симулируем узел где formatMode отсутствует, но есть тег tg-spoiler
+  const p = deepClone(BASE_PROJECT);
+  delete p.sheets[0].nodes[1].data.formatMode; // убираем formatMode
+  p.sheets[0].nodes[1].data.messageText = '<tg-spoiler>скрытый текст</tg-spoiler>';
+  const code = gen(p, 't54');
+  assertSyntax(code, 't54');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'при наличии tg-spoiler должен автоматически добавляться parse_mode="HTML"'
+  );
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+});
+
+// ── 55. Спойлер + обычный текст ──────────────────────────────────────────────
+test('55', 'Спойлер + обычный текст', () => {
+  const code = gen(patchMessage({
+    messageText: 'Осторожно: <tg-spoiler>спойлер к фильму</tg-spoiler>!',
+    formatMode: 'html',
+  }), 't55');
+  assertSyntax(code, 't55');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+  assert(code.includes('Осторожно'), 'обычный текст должен быть в коде');
+});
+
+// ── 56. Спойлер + жирный текст ───────────────────────────────────────────────
+test('56', 'Спойлер + жирный текст', () => {
+  const code = gen(patchMessage({
+    messageText: '<b>Важно:</b> <tg-spoiler>секрет</tg-spoiler>',
+    formatMode: 'html',
+  }), 't56');
+  assertSyntax(code, 't56');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('<b>') || code.includes('<strong>'), 'тег жирного текста должен быть в коде');
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+});
+
+// ── 57. Спойлер с переменной ─────────────────────────────────────────────────
+test('57', 'Спойлер с переменной {user_name}', () => {
+  const code = gen(patchMessage({
+    messageText: '<tg-spoiler>Привет, {user_name}!</tg-spoiler>',
+    formatMode: 'html',
+  }), 't57');
+  assertSyntax(code, 't57');
+  assert(code.includes('replace_variables_in_text'), 'должна вызываться замена переменных');
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+});
+
+// ── 58. Спойлер при formatMode:"none" — тег сохраняется как текст ─────────────
+test('58', 'Спойлер при formatMode:"none" — parse_mode не добавляется', () => {
+  // При явном none авто-определение не срабатывает — parse_mode не должен добавляться
+  const p = deepClone(BASE_PROJECT);
+  p.sheets[0].nodes[0].data.formatMode = 'none';
+  p.sheets[0].nodes[1].data.messageText = '<tg-spoiler>текст</tg-spoiler>';
+  p.sheets[0].nodes[1].data.formatMode = 'none';
+  const code = gen(p, 't58');
+  assertSyntax(code, 't58');
+  assert(!code.includes('parse_mode'), 'parse_mode не должен быть при явном formatMode:none');
+  assert(typeof code === 'string' && code.length > 0, 'код должен генерироваться без краша');
+});
+
+// ── 59. Несколько спойлеров в одном сообщении ────────────────────────────────
+test('59', 'Несколько спойлеров в одном сообщении', () => {
+  const code = gen(patchMessage({
+    messageText: 'Первый: <tg-spoiler>один</tg-spoiler>, второй: <tg-spoiler>два</tg-spoiler>',
+    formatMode: 'html',
+  }), 't59');
+  assertSyntax(code, 't59');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('tg-spoiler'), 'хотя бы один тег tg-spoiler должен быть в коде');
+});
+
+// ── 60. Спойлер на message-узле (не start) ───────────────────────────────────
+test('60', 'Спойлер на message-узле (не start)', () => {
+  const code = gen(patchMessage({
+    messageText: '<tg-spoiler>финальный твист</tg-spoiler>',
+    formatMode: 'html',
+  }), 't60');
+  assertSyntax(code, 't60');
+  assert(
+    code.includes('parse_mode="HTML"') || code.includes('ParseMode.HTML'),
+    'должен быть HTML parse_mode'
+  );
+  assert(code.includes('tg-spoiler'), 'тег tg-spoiler должен быть в коде');
+  assert(code.includes('финальный твист'), 'текст спойлера должен быть в коде');
 });
 
 const passed = results.filter(r => r.passed).length;

@@ -1,7 +1,7 @@
 /**
  * @fileoverview Единый парсер HTML → JSX для форматированного текста
  * @description Преобразует HTML-строку в массив JSX-элементов через DOMParser.
- * Поддерживает все теги форматирования Telegram и Markdown.
+ * Поддерживает все теги форматирования Telegram и Markdown, включая tg-spoiler.
  * @module formatting-parser
  */
 
@@ -27,6 +27,13 @@ const CODE_CLASS =
  */
 const BLOCKQUOTE_CLASS =
   'border-l-4 border-blue-500 pl-3 my-2 italic text-slate-600 dark:text-slate-400';
+
+/**
+ * CSS-класс для спойлера в режиме просмотра (FormattedText).
+ * Имитирует Telegram-спойлер: текст размыт, при наведении — виден.
+ */
+const SPOILER_CLASS =
+  'inline blur-sm hover:blur-none transition-[filter] duration-200 cursor-pointer bg-slate-200/60 dark:bg-slate-700/60 rounded px-0.5';
 
 /**
  * CSS-класс для ссылки
@@ -104,6 +111,18 @@ function nodeToJsx(node: Node, keyRef: KeyRef): JSX.Element | null {
 
     case 'BR':
       return <br key={keyRef.current++} />;
+
+    /** Telegram-специфичный тег спойлера: скрывает текст до наведения */
+    case 'TG-SPOILER':
+      return (
+        <span
+          key={keyRef.current++}
+          className={SPOILER_CLASS}
+          title="Спойлер"
+        >
+          {children}
+        </span>
+      );
 
     default:
       /** Для неизвестных тегов рекурсивно возвращаем дочерние элементы */

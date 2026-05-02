@@ -14,6 +14,9 @@ import { useKeyboardShortcuts } from './useKeyboardShortcuts';
 import { useVariableInsert } from './useVariableInsert';
 import { useClipboard } from './useClipboard';
 import { useEditorInput } from './useEditorInput';
+import { useLinkPopover } from './useLinkPopover';
+import type { UseLinkPopoverReturn } from './useLinkPopover';
+import { useActiveFormats } from './useActiveFormats';
 import { valueToHtml, htmlToValue } from '../html-converter';
 import { formatOptions } from '../format-options';
 
@@ -45,6 +48,12 @@ export interface UseInlineRichEditorReturn {
   canUndo: boolean;
   /** Доступен ли redo */
   canRedo: boolean;
+  /** Данные попапа ссылки */
+  linkPopover: UseLinkPopoverReturn;
+  /** Набор активных команд форматирования в позиции курсора */
+  activeFormats: Set<string>;
+  /** Обработчик потери фокуса редактором — сохраняет выделение */
+  saveSelectionOnBlur: () => void;
 }
 
 /**
@@ -82,20 +91,24 @@ export function useInlineRichEditor(
     setIsFormatting
   });
 
-  const { applyFormatting } = useFormatting({
+  const linkPopover = useLinkPopover(handleInput);
+
+  const { applyFormatting, saveSelectionOnBlur } = useFormatting({
     editorRef,
     saveToUndoStack,
     handleInput,
     toast,
     onFormatModeChange: props.onFormatModeChange,
-    setIsFormatting
+    setIsFormatting,
+    onLinkCommand: linkPopover.openLinkPopover
   });
 
   const { handleKeyDown } = useKeyboardShortcuts({
     applyFormatting,
     undo,
     redo,
-    formatOptions
+    formatOptions,
+    onLinkShortcut: linkPopover.openLinkPopover
   });
 
   const { copyFormatted } = useClipboard({ editorRef, toast });
@@ -110,6 +123,8 @@ export function useInlineRichEditor(
     setIsFormatting
   });
 
+  const activeFormats = useActiveFormats(editorRef);
+
   return {
     editorRef,
     wordCount,
@@ -122,6 +137,9 @@ export function useInlineRichEditor(
     insertVariable,
     handleInput,
     canUndo: undoStack.length > 0,
-    canRedo: redoStack.length > 0
+    canRedo: redoStack.length > 0,
+    linkPopover,
+    activeFormats,
+    saveSelectionOnBlur
   };
 }
