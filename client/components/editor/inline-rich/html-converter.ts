@@ -1,11 +1,24 @@
 /**
  * @fileoverview Утилиты конвертации между текстом и HTML
  * @description Преобразование Markdown ↔ HTML для contenteditable редактора.
- * Поддерживает Telegram-специфичные теги: tg-spoiler и синтаксис ||спойлер||.
+ * Поддерживает Telegram-специфичные теги: tg-spoiler, blockquote expandable.
  */
 
 import { decodeHtmlEntities } from './utils/html-entities';
+import { escapeHtmlContent } from './utils/escape-html-content';
 import { highlightVariables, unwrapVariables } from './utils/highlight-variables';
+
+/**
+ * Заменяет \n на <br> во всём HTML, включая содержимое тегов <pre>.
+ * Браузер в contenteditable игнорирует \n в innerHTML даже при white-space:pre,
+ * поэтому переносы нужно явно конвертировать в <br>.
+ * При обратной конвертации (htmlToValue) <br> внутри <pre> возвращаются в \n.
+ * @param html - HTML строка
+ * @returns HTML строка с <br> вместо всех \n
+ */
+function replaceNewlinesOutsidePre(html: string): string {
+  return html.replace(/\n/g, '<br>');
+}
 
 /**
  * Преобразует текст в HTML для отображения в contenteditable
@@ -32,10 +45,10 @@ export function valueToHtml(text: string, enableMarkdown: boolean): string {
       .replace(/^# (.+)$/gm, '<h3>$1</h3>')
       .replace(/^## (.+)$/gm, '<h4>$1</h4>')
       .replace(/^### (.+)$/gm, '<h5>$1</h5>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>')
-      .replace(/\n/g, '<br>');
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2">$1</a>');
+    html = replaceNewlinesOutsidePre(html);
   } else {
-    html = html.replace(/\n/g, '<br>');
+    html = replaceNewlinesOutsidePre(html);
   }
 
   return highlightVariables(html);
@@ -71,6 +84,10 @@ export function htmlToValue(html: string, enableMarkdown: boolean): string {
       .replace(/<div[^>]*>/g, '\n')
       .replace(/<\/div>/g, '');
   } else {
+    // Экранируем спецсимволы в текстовых узлах до замены тегов,
+    // чтобы <, > и & в пользовательском тексте не ломали Telegram HTML-парсер
+    text = escapeHtmlContent(text);
+
     // Даже без Markdown сохраняем теги форматирования для Telegram
     text = text
       .replace(/<strong[^>]*>(.*?)<\/strong>/g, '<b>$1</b>')
@@ -79,7 +96,23 @@ export function htmlToValue(html: string, enableMarkdown: boolean): string {
       .replace(/<s[^>]*>(.*?)<\/s>/g, '<s>$1</s>')
       /** Спойлер в HTML-режиме: сохраняем тег tg-spoiler для Telegram */
       .replace(/<tg-spoiler[^>]*>(.*?)<\/tg-spoiler>/g, '<tg-spoiler>$1</tg-spoiler>')
+      /** Блок кода: <pre> сохраняем как есть для Telegram (флаг s — dotAll для многострочного текста).
+       * Если внутри <pre> есть <code class="language-XXX"> — сохраняем обёртку с классом.
+       * <br> внутри <pre> конвертируем обратно в \n перед сохранением. */
+      .replace(/<pre[^>]*>(.*?)<\/pre>/gs, (_, inner) => {
+        // Проверяем наличие <code class="language-XXX">
+        const langMatch = inner.match(/<code[^>]*class="language-([^"]+)"[^>]*>([\s\S]*?)<\/code>/);
+        if (langMatch) {
+          const lang = langMatch[1];
+          const codeContent = langMatch[2].replace(/<br\s*\/?>/gi, '\n');
+          return `<pre><code class="language-${lang}">${codeContent}</code></pre>`;
+        }
+        return `<pre>${inner.replace(/<br\s*\/?>/gi, '\n')}</pre>`;
+      })
       .replace(/<code[^>]*>(.*?)<\/code>/g, '<code>$1</code>')
+      /** Раскрывающаяся цитата — должна идти ПЕРВОЙ, до обычного blockquote */
+      .replace(/<blockquote\s+expandable[^>]*>(.*?)<\/blockquote>/gs, '<blockquote expandable>$1</blockquote>')
+      /** Обычная цитата */
       .replace(/<blockquote[^>]*>(.*?)<\/blockquote>/g, '<blockquote>$1</blockquote>')
       .replace(/<h[3-5][^>]*>(.*?)<\/h[3-5]>/g, '<b>$1</b>')
       .replace(/<br\s*\/?>/g, '\n')

@@ -25,6 +25,8 @@ export function useMediaFiles(projectId: number, fileType?: string) {
   return useQuery({
     queryKey: ["/api/media/project", projectId, fileType],
     enabled: !!projectId,
+    /** Автообновление каждые 30 секунд — подхватывает telegram_file_id после первой отправки ботом */
+    refetchInterval: 30_000,
     queryFn: async (): Promise<MediaFile[]> => {
       const id = typeof projectId === 'number' ? projectId : parseInt(projectId as unknown as string);
       const url = fileType
@@ -387,5 +389,37 @@ export function useSearchMedia(projectId: number, query: string) {
       return response.json();
     },
     enabled: !!query.trim() && !!projectId && typeof projectId === 'number',
+  });
+}
+
+/**
+ * Хук для установки обложки видео
+ * @returns Мутация для обновления thumbnailMediaId и/или thumbnailUrl
+ */
+export function useSetThumbnail() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      videoId,
+      thumbnailId,
+      thumbnailUrl,
+    }: {
+      /** ID видеофайла */
+      videoId: number;
+      /** ID обложки через FK (undefined — не менять, null — убрать) */
+      thumbnailId?: number | null;
+      /** Прямой URL обложки (undefined — не менять, null — убрать) */
+      thumbnailUrl?: string | null;
+    }): Promise<MediaFile> => {
+      const payload: Record<string, unknown> = {};
+      if (thumbnailId !== undefined) payload.thumbnailMediaId = thumbnailId;
+      if (thumbnailUrl !== undefined) payload.thumbnailUrl = thumbnailUrl;
+      const response = await apiRequest('PUT', `/api/media/${videoId}`, payload);
+      if (!response.ok) throw new Error('Ошибка при установке обложки');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/media/project"], exact: false });
+    },
   });
 }

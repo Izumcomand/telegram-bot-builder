@@ -16,6 +16,8 @@ import { useClipboard } from './useClipboard';
 import { useEditorInput } from './useEditorInput';
 import { useLinkPopover } from './useLinkPopover';
 import type { UseLinkPopoverReturn } from './useLinkPopover';
+import { useCodeLanguage } from './useCodeLanguage';
+import type { UseCodeLanguageReturn } from './useCodeLanguage';
 import { useActiveFormats } from './useActiveFormats';
 import { valueToHtml, htmlToValue } from '../html-converter';
 import { formatOptions } from '../format-options';
@@ -50,10 +52,14 @@ export interface UseInlineRichEditorReturn {
   canRedo: boolean;
   /** Данные попапа ссылки */
   linkPopover: UseLinkPopoverReturn;
+  /** Данные строки ввода языка блока кода */
+  codeLanguage: UseCodeLanguageReturn;
   /** Набор активных команд форматирования в позиции курсора */
   activeFormats: Set<string>;
   /** Обработчик потери фокуса редактором — сохраняет выделение */
   saveSelectionOnBlur: () => void;
+  /** Обработчик вставки текста — сохраняет состояние в undo стек перед вставкой */
+  handlePaste: () => void;
 }
 
 /**
@@ -92,6 +98,7 @@ export function useInlineRichEditor(
   });
 
   const linkPopover = useLinkPopover(handleInput);
+  const codeLanguage = useCodeLanguage(editorRef, handleInput);
 
   const { applyFormatting, saveSelectionOnBlur } = useFormatting({
     editorRef,
@@ -125,6 +132,14 @@ export function useInlineRichEditor(
 
   const activeFormats = useActiveFormats(editorRef);
 
+  /**
+   * Сохраняет текущее состояние в undo стек перед вставкой текста,
+   * чтобы вставку можно было отменить кнопкой Undo
+   */
+  const handlePaste = useCallback(() => {
+    saveToUndoStack();
+  }, [saveToUndoStack]);
+
   return {
     editorRef,
     wordCount,
@@ -139,7 +154,9 @@ export function useInlineRichEditor(
     canUndo: undoStack.length > 0,
     canRedo: redoStack.length > 0,
     linkPopover,
+    codeLanguage,
     activeFormats,
-    saveSelectionOnBlur
+    saveSelectionOnBlur,
+    handlePaste
   };
 }

@@ -23,7 +23,7 @@ import { eq } from "drizzle-orm";
 import { cleanupBotStates } from "../bots/cleanupBotStates";
 import { stopBot } from "../bots/stopBot";
 import dbRoutes from "../database/db-routes";
-import { db } from "../database/db";
+import { db, pool as dbPool } from "../database/db";
 import { initializeDatabaseTables } from "../database/init-db";
 import { ensureDefaultProject } from "../utils/ensureDefaultProject";
 import { downloadFileFromUrl } from "../files/downloadFileFromUrl";
@@ -1199,6 +1199,67 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   });
 
   /**
+   * Обновление настройки сохранения входящих медиафайлов для токена бота
+   * PUT /api/projects/:projectId/tokens/:tokenId/save-incoming-media
+   */
+  app.put("/api/projects/:projectId/tokens/:tokenId/save-incoming-media", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const projectId = parseInt(req.params.projectId);
+      const { saveIncomingMedia } = req.body as { saveIncomingMedia: number };
+
+      if (saveIncomingMedia !== 0 && saveIncomingMedia !== 1) {
+        return res.status(400).json({ message: "saveIncomingMedia должен быть 0 или 1" });
+      }
+
+      const updated = await storage.updateBotToken(tokenId, { saveIncomingMedia });
+      if (!updated) {
+        return res.status(404).json({ message: "Токен не найден" });
+      }
+
+      try {
+        const { existsSync, readFileSync, writeFileSync, readdirSync } = await import('fs');
+        const { join } = await import('path');
+        const botsDir = join(process.cwd(), 'bots');
+
+        if (existsSync(botsDir)) {
+          const dirs = readdirSync(botsDir, { withFileTypes: true });
+
+          for (const dir of dirs) {
+            if (!dir.isDirectory()) continue;
+
+            const envPath = join(botsDir, dir.name, '.env');
+            if (!existsSync(envPath)) continue;
+
+            const content = readFileSync(envPath, 'utf8');
+            if (!content.includes(`PROJECT_ID=${projectId}`)) continue;
+
+            const line = `SAVE_INCOMING_MEDIA=${saveIncomingMedia === 1 ? 'true' : 'false'}`;
+            let updatedContent = content;
+
+            if (/^SAVE_INCOMING_MEDIA=.*/m.test(updatedContent)) {
+              updatedContent = updatedContent.replace(/^SAVE_INCOMING_MEDIA=.*/m, line);
+            } else {
+              updatedContent = `${updatedContent.trim()}\n\n# Сохранение входящих медиафайлов от пользователей\n${line}\n`;
+            }
+
+            if (updatedContent !== content) {
+              writeFileSync(envPath, updatedContent, 'utf8');
+              console.log(`✅ SAVE_INCOMING_MEDIA обновлён в ${envPath}: ${saveIncomingMedia}`);
+            }
+          }
+        }
+      } catch (envErr) {
+        console.warn('⚠️ Не удалось обновить .env файл бота:', envErr);
+      }
+
+      res.json({ success: true, saveIncomingMedia });
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка обновления настройки сохранения медиа" });
+    }
+  });
+
+  /**
    * Обновление уровня логирования для токена бота
    * PUT /api/projects/:projectId/tokens/:tokenId/log-level
    */
@@ -2111,46 +2172,102 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       }
     }
 
+    // Параметры пагинации: если limit не передан — обратная совместимость (массив)
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : null;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+    // Параметры серверного поиска, фильтрации и сортировки (только для пагинированного режима)
+    const search = req.query.search as string | undefined;
+    const filterActive = req.query.filterActive as string | undefined;
+    const sortBy = req.query.sortBy as string | undefined;
+    const sortDir = req.query.sortDir as string | undefined;
+
+    // Белый список колонок для ORDER BY (защита от SQL injection)
+    const sortColumnMap: Record<string, string> = {
+      lastInteraction: 'u.last_interaction',
+      createdAt: 'u.registered_at',
+      interactionCount: 'u.interaction_count',
+      firstName: 'u.first_name',
+      userName: 'u.username',
+    };
+    const sortColumn = sortColumnMap[sortBy as string] ?? 'u.last_interaction';
+    const sortOrder = sortDir === 'asc' ? 'ASC' : 'DESC';
+
+    const selectBase = `
+      SELECT
+        ROW_NUMBER() OVER (ORDER BY u.last_interaction DESC) AS id,
+        u.user_id::text AS "userId",
+        u.username AS "userName",
+        u.first_name AS "firstName",
+        u.last_name AS "lastName",
+        u.avatar_url AS "avatarUrl",
+        u.registered_at AS "registeredAt",
+        u.registered_at AS "createdAt",
+        u.last_interaction AS "lastInteraction",
+        COALESCE(u.interaction_count, 0)::integer AS "interactionCount",
+        CASE WHEN u.is_active = 1 THEN TRUE ELSE FALSE END AS "isActive",
+        FALSE AS "isPremium",
+        FALSE AS "isBlocked",
+        CASE WHEN u.is_bot = 1 THEN TRUE ELSE FALSE END AS "isBot",
+        lm.message_text AS "lastMessageText",
+        lm.created_at AS "lastMessageAt"
+      FROM bot_users u
+      LEFT JOIN LATERAL (
+        SELECT message_text, created_at
+        FROM bot_messages
+        WHERE user_id = u.user_id::text
+          AND project_id = u.project_id
+        ORDER BY created_at DESC
+        LIMIT 1
+      ) lm ON true
+      WHERE u.is_bot = 0
+        AND u.project_id = $1
+        AND ($2::integer IS NULL OR u.token_id = $2)
+    `;
+
     try {
-      console.log(`Fetching users for project ${projectId}`);
+      if (limit !== null) {
+        // Режим пагинации: строим динамические условия WHERE
+        const params: any[] = [projectId, tokenId];
+        let paramIdx = 3;
+        const conditions: string[] = [];
 
-      // Connect directly to PostgreSQL to get data from bot_users table
-      const { Pool } = await import('pg');
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL
-      });
+        if (search) {
+          const searchParam = `%${search}%`;
+          conditions.push(
+            `(u.first_name ILIKE $${paramIdx} OR u.username ILIKE $${paramIdx} OR u.user_id::text ILIKE $${paramIdx})`
+          );
+          params.push(searchParam);
+          paramIdx++;
+        }
+        if (filterActive === 'true') conditions.push('u.is_active = 1');
+        if (filterActive === 'false') conditions.push('u.is_active = 0');
 
-      const result = await pool.query(`
-        SELECT
-          ROW_NUMBER() OVER (ORDER BY bu.last_interaction DESC) AS id,
-          bu.user_id::text AS "userId",
-          bu.username AS "userName",
-          bu.first_name AS "firstName",
-          bu.last_name AS "lastName",
-          bu.avatar_url AS "avatarUrl",
-          bu.registered_at AS "registeredAt",
-          bu.registered_at AS "createdAt",
-          bu.last_interaction AS "lastInteraction",
-          COALESCE(COUNT(bm.id), 0)::integer AS "interactionCount",
-          bu.user_data AS "userData",
-          CASE WHEN bu.is_active = 1 THEN TRUE ELSE FALSE END AS "isActive",
-          FALSE AS "isPremium",
-          FALSE AS "isBlocked",
-          CASE WHEN bu.is_bot = 1 THEN TRUE ELSE FALSE END AS "isBot"
-        FROM bot_users bu
-        LEFT JOIN bot_messages bm
-          ON bm.user_id = bu.user_id::text
-          AND bm.project_id = $1
-          AND ($2::integer IS NULL OR bm.token_id = $2)
-        WHERE bu.is_bot = 0
-          AND bu.project_id = $1
-          AND ($2::integer IS NULL OR bu.token_id = $2)
-        GROUP BY bu.user_id, bu.username, bu.first_name, bu.last_name, bu.avatar_url, bu.registered_at, bu.last_interaction, bu.user_data, bu.is_active, bu.is_bot
-        ORDER BY bu.last_interaction DESC
-      `, [projectId, tokenId]);
+        const whereExtra = conditions.length ? ' AND ' + conditions.join(' AND ') : '';
 
-      // НЕ закрываем пул - он нужен для других запросов
+        const dataSql = `${selectBase}${whereExtra} ORDER BY ${sortColumn} ${sortOrder} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+        const countSql = `
+          SELECT COUNT(*)::integer AS total FROM bot_users u
+          WHERE u.is_bot = 0 AND u.project_id = $1 AND ($2::integer IS NULL OR u.token_id = $2)${whereExtra}
+        `;
 
+        const dataParams = [...params, limit, offset];
+        const countParams = [...params];
+
+        const [dataResult, countResult] = await Promise.all([
+          dbPool.query(dataSql, dataParams),
+          dbPool.query(countSql, countParams),
+        ]);
+
+        const total: number = countResult.rows[0]?.total ?? 0;
+        const users = dataResult.rows;
+        console.log(`Paginated: project ${projectId}, offset=${offset}, limit=${limit}, total=${total}`);
+        return res.json({ users, total, hasMore: offset + users.length < total });
+      }
+
+      // Обратная совместимость: возвращаем массив без пагинации (без фильтров)
+      const selectSql = `${selectBase} ORDER BY u.last_interaction DESC`;
+      const result = await dbPool.query(selectSql, [projectId, tokenId]);
       console.log(`Found ${result.rows.length} users for project ${projectId}`);
       res.json(result.rows);
     } catch (error) {
@@ -2160,7 +2277,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         const users = await storage.getUserBotDataByProject(parseInt(req.params.id), tokenId);
         const projectId = parseInt(req.params.id);
         console.log(`Found ${users.length} users for project ${projectId} from fallback`);
-        res.json(users);
+        res.json(limit !== null ? { users, total: users.length, hasMore: false } : users);
       } catch (fallbackError) {
         res.status(500).json({ message: "Failed to fetch user data" });
       }
@@ -2182,28 +2299,23 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
     }
 
     try {
-      // Use direct PostgreSQL query on bot_users table
-      const { Pool } = await import('pg');
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL
-      });
-
-      const result = await pool.query(`
+      // Используем общий пул соединений для запроса к bot_users.
+      // JOIN с bot_messages убран — используем денормализованный interaction_count из bot_users.
+      const result = await dbPool.query(`
         SELECT
-          COUNT(DISTINCT bu.user_id) as "totalUsers",
-          COUNT(DISTINCT bu.user_id) FILTER (WHERE bu.is_active = 1) as "activeUsers",
-          COUNT(DISTINCT bu.user_id) FILTER (WHERE bu.is_active = 0) as "blockedUsers",
+          COUNT(*) as "totalUsers",
+          COUNT(*) FILTER (WHERE is_active = 1) as "activeUsers",
+          COUNT(*) FILTER (WHERE is_active = 0) as "blockedUsers",
           0 as "premiumUsers",
-          COUNT(DISTINCT bu.user_id) FILTER (WHERE bu.user_data IS NOT NULL AND bu.user_data != '{}') as "usersWithResponses",
-          COALESCE(COUNT(bm.id), 0) as "totalInteractions",
-          CASE WHEN COUNT(DISTINCT bu.user_id) > 0 THEN COALESCE(COUNT(bm.id)::float / COUNT(DISTINCT bu.user_id), 0) ELSE 0 END as "avgInteractionsPerUser"
-        FROM bot_users bu
-        LEFT JOIN bot_messages bm
-          ON bm.user_id = bu.user_id::text
-          AND bm.project_id = $1
-          AND ($2::integer IS NULL OR bm.token_id = $2)
-        WHERE bu.project_id = $1
-          AND ($2::integer IS NULL OR bu.token_id = $2)
+          COUNT(*) FILTER (WHERE user_data IS NOT NULL AND user_data != '{}') as "usersWithResponses",
+          COALESCE(SUM(interaction_count), 0) as "totalInteractions",
+          CASE WHEN COUNT(*) > 0
+            THEN COALESCE(SUM(interaction_count)::float / COUNT(*), 0)
+            ELSE 0
+          END as "avgInteractionsPerUser"
+        FROM bot_users
+        WHERE project_id = $1
+          AND ($2::integer IS NULL OR token_id = $2)
       `, [projectId, tokenId]);
 
       const stats = result.rows[0];
@@ -2219,12 +2331,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       console.error("Error fetching user stats:", error);
       // Fallback to user_bot_data table if bot_users doesn't exist
       try {
-        const { Pool } = await import('pg');
-        const pool = new Pool({
-          connectionString: process.env.DATABASE_URL
-        });
-
-        const result = await pool.query(`
+        const fallbackResult = await dbPool.query(`
           SELECT 
             COUNT(*) as "totalUsers",
             COUNT(*) FILTER (WHERE is_active = 1) as "activeUsers",
@@ -2238,9 +2345,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
             AND ($2::integer IS NULL OR token_id = $2)
         `, [req.params.id, tokenId]);
 
-        // НЕ закрываем пул - он нужен для других запросов
-
-        const stats = result.rows[0];
+        const stats = fallbackResult.rows[0];
         Object.keys(stats).forEach(key => {
           if (typeof stats[key] === 'string' && !isNaN(stats[key] as any)) {
             stats[key] = parseInt(stats[key] as any);
@@ -2259,13 +2364,8 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
     try {
       const projectId = parseInt(req.params.id);
 
-      // Подключаемся напрямую к PostgreSQL для получения ответов пользователей из bot_users
-      const { Pool } = await import('pg');
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL
-      });
-
-      const result = await pool.query(`
+      // Используем общий пул соединений
+      const result = await dbPool.query(`
         SELECT 
           user_id,
           username,
@@ -2280,8 +2380,6 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
           AND user_data != '{}'
         ORDER BY last_interaction DESC
       `, [projectId]);
-
-      // НЕ закрываем пул - он нужен для других запросов
 
       // Обрабатываем и структурируем ответы
       const processedResponses = result.rows.map(user => {
@@ -2444,11 +2542,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
 
     try {
       effectiveTokenId = await resolveEffectiveProjectTokenId(projectId, requestedTokenId);
-      // Подключаемся напрямую к PostgreSQL для обновления данных в bot_users
-      const { Pool } = await import('pg');
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL
-      });
+      // Используем общий пул соединений для обновления bot_users
 
       // Проверяем какие поля можно обновить
       const updateFields = [];
@@ -2481,8 +2575,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
 
       console.log('Updating user:', userId, 'with query:', query, 'values:', values);
 
-      const result = await pool.query(query, values);
-      // НЕ закрываем пул - он нужен для других запросов
+      const result = await dbPool.query(query, values);
 
       console.log('Update result:', result.rows.length, 'rows affected');
 
@@ -2526,15 +2619,11 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       const requestedTokenId = getRequestTokenId(req);
       const tokenId = await resolveEffectiveProjectTokenId(projectId, requestedTokenId);
 
-      // Подключение к PostgreSQL для прямого удаления
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-      });
-
+      // Используем общий пул соединений для удаления
       try {
         // Удаляем сообщения пользователя из таблицы bot_messages
         try {
-          const deleteMessagesResult = await pool.query(
+          const deleteMessagesResult = await dbPool.query(
             `DELETE FROM bot_messages WHERE user_id = $1 AND project_id = $2 AND token_id = $3`,
             [id, projectId, tokenId]
           );
@@ -2545,19 +2634,16 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         }
 
         // Пытаемся удалить из bot_users если пользователь передал user_id
-        const deleteResult = await pool.query(
+        const deleteResult = await dbPool.query(
           `DELETE FROM bot_users WHERE user_id = $1 AND project_id = $2 AND token_id = $3`,
           [id, projectId, tokenId]
         );
-
-        // НЕ закрываем пул - он нужен для других запросов
 
         if (deleteResult.rowCount && deleteResult.rowCount > 0) {
           console.log(`Deleted user ${id} from bot_users table`);
           return res.json({ message: "User data deleted successfully" });
         }
       } catch (dbError) {
-        // НЕ закрываем пул - он нужен для других запросов
         console.log("bot_users table not found, falling back to user_bot_data");
       }
 
@@ -2597,14 +2683,9 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
 
       let totalDeleted = 0;
 
-      // Подключение к PostgreSQL
-      const pool = new Pool({
-        connectionString: process.env.DATABASE_URL,
-      });
-
       try {
-        // Удаляем в??ех поль??ова??ел????й из таблицы bot_users для данного проекта
-        const deleteResult = await pool.query(
+        // Удаляем всех пользователей из таблицы bot_users для данного проекта
+        const deleteResult = await dbPool.query(
           tokenId
             ? `DELETE FROM bot_users WHERE project_id = $1 AND token_id = $2`
             : `DELETE FROM bot_users WHERE project_id = $1`,
@@ -2617,11 +2698,9 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         console.log("bot_users table not found or error:", (dbError as any).message);
       }
 
-      // НЕ закрываем пул - он нужен для других запросов
-
       // Удаляем сообщения из таблицы bot_messages
       try {
-        const deleteMessagesResult = await pool.query(
+        const deleteMessagesResult = await dbPool.query(
           tokenId
             ? `DELETE FROM bot_messages WHERE project_id = $1 AND token_id = $2`
             : `DELETE FROM bot_messages WHERE project_id = $1`,

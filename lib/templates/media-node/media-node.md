@@ -13,6 +13,8 @@
 | `enableAutoTransition`| `boolean`  | ❌           | Включить автопереход после отправки   |
 | `autoTransitionTo`    | `string`   | ❌           | ID целевого узла автоперехода         |
 | `messageSendRecipients` | `MediaSendRecipient[]` | ❌ | Список получателей (если пустой — отправка пользователю) |
+| `telegramFileIds`     | `Record<string, string>` | ❌ | Словарь кэшированных Telegram file_id. Ключ — URL файла, значение — file_id. При наличии — отправка через file_id напрямую без загрузки файла. |
+| `thumbnailFileIds`    | `Record<string, string>` | ❌ | Словарь обложек видео: ключ — URL видео, значение — Telegram file_id обложки. Передаётся как `thumbnail=` в `answer_video`. |
 | `state`               | `FSMContext` | ❌         | Опциональный FSM контекст (state: FSMContext = None). Используется для чтения/записи данных между переходами. |
 
 ## Тип MediaSendRecipient
@@ -43,6 +45,7 @@
 - **0 файлов** — генерируется `pass` (нет отправки)
 - **`/uploads/` пути** — используется `FSInputFile(get_upload_file_path(...))`
 - **Автопереход** — генерирует `FakeCallbackQuery` и вызов следующего обработчика
+- **Кэшированный file_id** — если для URL есть запись в `telegramFileIds`, отправка идёт напрямую через file_id (`📎` в логах). При первой отправке без кэша — логируется `📤` и полученный file_id записывается в лог (`✅`).
 - **Переменная типа `file`** — если переменная содержит объект `{type: "file", data, mimeType, fileName}`, метод отправки выбирается по `mimeType`: `image/*` → `answer_photo`, `audio/*` → `answer_audio`, `video/*` → `answer_video`, остальное → `answer_document`
 
 ## Пример использования

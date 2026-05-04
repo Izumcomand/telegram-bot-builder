@@ -177,13 +177,24 @@ function generateCommandEntryHandler(node: Node, callbackHandlerCode: string): s
  *
  * @param nodes - Массив узлов для генерации обработчиков
  * @param userDatabaseEnabled - Флаг, указывающий, включена ли база данных пользователей
+ * @param enableComments - Включить автоматические комментарии в коде
+ * @param telegramFileIds - Словарь кэшированных Telegram file_id (ключ — URL, значение — file_id)
+ * @param thumbnailFileIds - Словарь обложек видео (ключ — URL видео, значение — file_id обложки)
+ * @param thumbnailUrls - Словарь прямых URL обложек видео (ключ — URL видео, значение — URL обложки)
  * @returns Сгенерированный код обработчиков узлов
  *
  * @example
  * const nodes = [{ id: 'welcome', type: 'message' }, { id: 'help-trigger', type: 'command_trigger' }];
  * const code = generateNodeHandlers(nodes, true, true);
  */
-export function generateNodeHandlers(nodes: Node[], userDatabaseEnabled: boolean, enableComments: boolean = true): string {
+export function generateNodeHandlers(
+  nodes: Node[],
+  userDatabaseEnabled: boolean,
+  enableComments: boolean = true,
+  telegramFileIds: Record<string, string> = {},
+  thumbnailFileIds: Record<string, string> = {},
+  thumbnailUrls: Record<string, string> = {}
+): string {
   // Собираем код в массив строк
   const codeLines: string[] = [];
 
@@ -253,6 +264,9 @@ export function generateNodeHandlers(nodes: Node[], userDatabaseEnabled: boolean
         saveMessageIdTo: (node.data as any)?.saveMessageIdTo || undefined,
         enableDynamicButtons: node.data?.enableDynamicButtons ?? false,
         dynamicButtons: node.data?.dynamicButtons as DynamicButtonsConfig | undefined,
+        telegramFileIds: { ...(telegramFileIds || {}), ...((node.data as any)?.telegramFileIds || {}) },
+        thumbnailFileIds: { ...(thumbnailFileIds || {}), ...((node.data as any)?.thumbnailFileIds || {}) },
+        thumbnailUrls: { ...(thumbnailUrls || {}), ...((node.data as any)?.thumbnailUrls || {}) },
       };
   };
 
@@ -319,6 +333,12 @@ export function generateNodeHandlers(nodes: Node[], userDatabaseEnabled: boolean
       attachedMedia: node.data?.attachedMedia || [],
       /** Список получателей медиа-сообщения */
       messageSendRecipients: (node.data as any)?.messageSendRecipients || [],
+      /** Кэшированные Telegram file_id для медиафайлов узла */
+      telegramFileIds: { ...(telegramFileIds || {}), ...((node.data as any)?.telegramFileIds || {}) },
+      /** Словарь обложек видео для media-ноды */
+      thumbnailFileIds: { ...(thumbnailFileIds || {}), ...((node.data as any)?.thumbnailFileIds || {}) },
+      /** Словарь прямых URL обложек видео для media-ноды */
+      thumbnailUrls: { ...(thumbnailUrls || {}), ...((node.data as any)?.thumbnailUrls || {}) },
     }),
   };
 

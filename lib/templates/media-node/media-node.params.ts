@@ -34,4 +34,20 @@ export interface MediaNodeTemplateParams {
   autoTransitionTo?: string;
   /** Список получателей (если пустой — отправка пользователю) */
   messageSendRecipients?: MediaSendRecipient[];
+  /**
+   * Словарь кэшированных Telegram file_id.
+   * Ключ — URL или путь медиафайла, значение — Telegram file_id.
+   * Если для URL есть file_id — отправляем через него напрямую.
+   */
+  telegramFileIds?: Record<string, string>;
+  /**
+   * Словарь обложек видео: ключ — URL видео, значение — Telegram file_id обложки.
+   * Передаётся как thumbnail= в answer_video при первой отправке.
+   */
+  thumbnailFileIds?: Record<string, string>;
+  /**
+   * Словарь прямых URL обложек видео: ключ — URL видео, значение — URL обложки.
+   * Используется если thumbnailFileIds не содержит file_id для данного видео.
+   */
+  thumbnailUrls?: Record<string, string>;
 }

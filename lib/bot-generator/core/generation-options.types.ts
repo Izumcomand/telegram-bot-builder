@@ -34,6 +34,24 @@ export interface GenerationOptions {
   webhookUrl?: string | null;
   /** Порт aiohttp сервера для webhook режима */
   webhookPort?: number | null;
+  /** Сохранять входящие фото от пользователей в БД */
+  saveIncomingMedia?: boolean;
+  /**
+   * Словарь кэшированных Telegram file_id для медиафайлов.
+   * Ключ — URL файла, значение — Telegram file_id.
+   */
+  telegramFileIds?: Record<string, string>;
+  /**
+   * Словарь обложек видео: ключ — URL видео, значение — Telegram file_id обложки.
+   * Если для видео есть обложка — передаётся как thumbnail= в send_video.
+   */
+  thumbnailFileIds?: Record<string, string>;
+  /**
+   * Словарь прямых URL обложек видео: ключ — URL видео, значение — URL обложки.
+   * Используется если обложка задана как строка (без FK на media_files).
+   * Приоритет: thumbnailFileIds > thumbnailUrls.
+   */
+  thumbnailUrls?: Record<string, string>;
 }
 
 /**
@@ -51,6 +69,10 @@ export const DEFAULT_GENERATION_OPTIONS: Required<GenerationOptions> = {
   autoRegisterUsers: false,
   webhookUrl: null,
   webhookPort: null,
+  saveIncomingMedia: false,
+  telegramFileIds: {},
+  thumbnailFileIds: {},
+  thumbnailUrls: {},
 } as const;
 
 /**

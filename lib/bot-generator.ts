@@ -109,6 +109,23 @@ export interface GeneratePythonCodeOptions {
   webhookUrl?: string | null;
   /** Порт aiohttp сервера */
   webhookPort?: number | null;
+  /** Сохранять входящие фото от пользователей в БД */
+  saveIncomingMedia?: boolean;
+  /**
+   * Словарь кэшированных Telegram file_id для медиафайлов проекта.
+   * Ключ — URL файла (/uploads/...), значение — Telegram file_id.
+   * Передаётся в генератор узлов для статического вшивания в код.
+   */
+  telegramFileIds?: Record<string, string>;
+  /**
+   * Словарь обложек видео: ключ — URL видео, значение — Telegram file_id обложки.
+   * Передаётся как thumbnail= в send_video / answer_video.
+   */
+  thumbnailFileIds?: Record<string, string>;
+  /**
+   * Словарь прямых URL обложек видео: ключ — URL видео, значение — URL обложки.
+   */
+  thumbnailUrls?: Record<string, string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -159,6 +176,10 @@ function buildGenerationContext(
     autoRegisterUsers = false,
     webhookUrl = null,
     webhookPort = null,
+    saveIncomingMedia = false,
+    telegramFileIds = {},
+    thumbnailFileIds = {},
+    thumbnailUrls = {},
   } = options;
 
   const genOptions: GenerationOptions = {
@@ -170,6 +191,10 @@ function buildGenerationContext(
     autoRegisterUsers,
     webhookUrl,
     webhookPort,
+    saveIncomingMedia,
+    telegramFileIds,
+    thumbnailFileIds,
+    thumbnailUrls,
   };
 
   const context = createGenerationContext(botData, botName, groups, genOptions);
@@ -207,6 +232,7 @@ function generateCodeSections(
       hasReplyKeyboard: flags.hasReplyKeyboardResult,
       hasLocalMediaFiles: flags.hasLocalMediaFilesResult,
       hasBotCommands: flags.hasBotCommandsResult,
+      hasDeepLinkTriggers: flags.hasDeepLinkTriggersResult,
     })
   );
 
@@ -239,7 +265,8 @@ function generateCodeSections(
           userDatabaseEnabled,
           hasInlineButtons(nodes),
           context.projectId,
-          autoRegisterUsers
+          autoRegisterUsers,
+          !!context.options.saveIncomingMedia
         )
       : ''
   );
@@ -267,7 +294,10 @@ function generateCodeSections(
   const nodeHandlers = generateNodeHandlers(
     nodes,
     userDatabaseEnabled,
-    !!context.options.enableComments
+    !!context.options.enableComments,
+    context.options.telegramFileIds || {},
+    context.options.thumbnailFileIds || {},
+    context.options.thumbnailUrls || {}
   );
 
   // --- allReferencedNodeIds (теперь часть контекста секции) ---

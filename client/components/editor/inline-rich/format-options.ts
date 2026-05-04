@@ -1,7 +1,7 @@
 /**
  * @fileoverview Конфигурация опций форматирования текста
  * @description Содержит настройки для кнопок форматирования с иконками и горячими клавишами.
- * Включает поддержку Telegram-специфичных тегов: tg-spoiler.
+ * Включает поддержку Telegram-специфичных тегов: tg-spoiler, blockquote expandable.
  */
 
 import {
@@ -11,9 +11,10 @@ import {
   Strikethrough,
   Code,
   Quote,
-  Heading3,
   Link,
   EyeOff,
+  SquareCode,
+  TextQuote,
   LucideIcon
 } from 'lucide-react';
 
@@ -67,7 +68,7 @@ export const formatOptions: FormatOption[] = [
     command: 'strikethrough',
     icon: Strikethrough,
     name: 'Зачеркнутый',
-    shortcut: 'Ctrl+Shift+X',
+    shortcut: 'Ctrl+Shift+5',
     markdown: '~~текст~~',
     html: '<s>текст</s>'
   },
@@ -83,10 +84,19 @@ export const formatOptions: FormatOption[] = [
   {
     command: 'code',
     icon: Code,
-    name: 'Код',
+    name: 'Моноширинный',
     shortcut: 'Ctrl+E',
     markdown: '`код`',
     html: '<code>код</code>'
+  },
+  {
+    /** Блок кода Telegram: <pre> — моноширинный блок с кнопкой Copy */
+    command: 'codeblock',
+    icon: SquareCode,
+    name: 'Блок кода',
+    shortcut: 'Ctrl+Shift+E',
+    markdown: '```\nкод\n```',
+    html: '<pre>код</pre>'
   },
   {
     command: 'quote',
@@ -97,12 +107,13 @@ export const formatOptions: FormatOption[] = [
     html: '<blockquote>цитата</blockquote>'
   },
   {
-    command: 'heading',
-    icon: Heading3,
-    name: 'Заголовок',
-    shortcut: 'Ctrl+H',
-    markdown: '# заголовок',
-    html: '<h3>заголовок</h3>'
+    /** Раскрывающаяся цитата Telegram: <blockquote expandable> — сворачивается с кнопкой "Показать больше" */
+    command: 'expandable-quote',
+    icon: TextQuote,
+    name: 'Раскрывающаяся цитата',
+    shortcut: 'Ctrl+Shift+Q',
+    markdown: '> цитата',
+    html: '<blockquote expandable>цитата</blockquote>'
   },
   {
     command: 'link',

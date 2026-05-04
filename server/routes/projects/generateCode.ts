@@ -92,6 +92,128 @@ export async function handleGenerateCode(req: Request, res: Response): Promise<v
       }
     }
 
+    // Собираем все URL медиафайлов из узлов проекта для получения кэшированных file_id
+    const allNodes: any[] = [];
+    if (Array.isArray(botDataForGenerator.sheets)) {
+      for (const sheet of botDataForGenerator.sheets) {
+        if (Array.isArray(sheet?.nodes)) allNodes.push(...sheet.nodes);
+      }
+    } else if (Array.isArray(botDataForGenerator.nodes)) {
+      allNodes.push(...botDataForGenerator.nodes);
+    }
+
+    const mediaUrls = new Set<string>();
+    for (const node of allNodes) {
+      const data = node?.data;
+      if (!data) continue;
+      // media-нода: attachedMedia
+      if (Array.isArray(data.attachedMedia)) {
+        for (const url of data.attachedMedia) {
+          if (typeof url === 'string' && url.startsWith('/uploads/')) mediaUrls.add(url);
+        }
+      }
+      // message-нода: imageUrl, videoUrl, audioUrl, documentUrl
+      for (const field of ['imageUrl', 'videoUrl', 'audioUrl', 'documentUrl']) {
+        const url = data[field];
+        if (typeof url === 'string' && url.startsWith('/uploads/')) mediaUrls.add(url);
+      }
+    }
+
+    // Получаем кэшированные Telegram file_id из БД
+    const telegramFileIds: Record<string, string> = {};
+    if (mediaUrls.size > 0) {
+      try {
+        const mediaFilesWithIds = await storage.getMediaFilesByUrls(Array.from(mediaUrls), projectId);
+        for (const mf of mediaFilesWithIds) {
+          if (mf.telegramFileId) {
+            telegramFileIds[mf.url] = mf.telegramFileId;
+          }
+        }
+        console.log(`[Generate] Найдено ${Object.keys(telegramFileIds).length} кэшированных file_id из ${mediaUrls.size} URL`);
+      } catch (err) {
+        console.warn('[Generate] Не удалось получить telegramFileIds:', err);
+      }
+    }
+
+    // Собираем обложки видео (thumbnailMediaId → telegramFileId обложки)
+    const thumbnailFileIds: Record<string, string> = {};
+    const thumbnailUrls: Record<string, string> = {};
+    if (mediaUrls.size > 0) {
+      try {
+        const mediaFilesWithIds = await storage.getMediaFilesByUrls(Array.from(mediaUrls), projectId);
+        for (const mf of mediaFilesWithIds) {
+          // Обложка через FK (thumbnailMediaId)
+          if (mf.thumbnailMediaId) {
+            const thumbFile = await storage.getMediaFile(mf.thumbnailMediaId);
+            if (thumbFile?.telegramFileId) {
+              // Есть file_id — используем напрямую
+              thumbnailFileIds[mf.url] = thumbFile.telegramFileId;
+            } else if (thumbFile?.url) {
+              // Нет file_id — передаём URL обложки (FSInputFile или внешний URL)
+              thumbnailUrls[mf.url] = thumbFile.url;
+            }
+          }
+          // Обложка через прямой URL (thumbnailUrl — строка без FK)
+          if (mf.thumbnailUrl && !thumbnailFileIds[mf.url] && !thumbnailUrls[mf.url]) {
+            thumbnailUrls[mf.url] = mf.thumbnailUrl;
+          }
+        }
+        const totalThumbs = Object.keys(thumbnailFileIds).length + Object.keys(thumbnailUrls).length;
+        if (totalThumbs > 0) {
+          console.log(`[Generate] Найдено обложек: ${Object.keys(thumbnailFileIds).length} file_id, ${Object.keys(thumbnailUrls).length} URL`);
+        }
+      } catch (err) {
+        console.warn('[Generate] Не удалось получить обложки:', err);
+      }
+    }
+
+    // Собираем attachedMediaThumbnails из нод как fallback
+    const nodeThumbnailUrls: Record<string, string> = {};
+    for (const node of allNodes) {
+      const data = node?.data;
+      if (!data?.attachedMediaThumbnails) continue;
+      for (const [videoUrl, thumbUrl] of Object.entries(data.attachedMediaThumbnails)) {
+        if (typeof thumbUrl === 'string') {
+          nodeThumbnailUrls[videoUrl] = thumbUrl;
+        }
+      }
+    }
+
+    // Fallback из нод project.json (приоритет ниже БД)
+    for (const [videoUrl, thumbUrl] of Object.entries(nodeThumbnailUrls)) {
+      if (!thumbnailFileIds[videoUrl] && !thumbnailUrls[videoUrl]) {
+        thumbnailUrls[videoUrl] = thumbUrl;
+      }
+    }
+
+    // Апгрейд: если обложка из ноды уже есть в БД с telegramFileId — используем file_id
+    const thumbUrlsToCheck = Object.values(nodeThumbnailUrls).filter(
+      (url): url is string => typeof url === 'string' && url.startsWith('/uploads/')
+    );
+    if (thumbUrlsToCheck.length > 0) {
+      try {
+        const thumbFilesInDb = await storage.getMediaFilesByUrls(thumbUrlsToCheck, projectId);
+        for (const thumbFile of thumbFilesInDb) {
+          if (!thumbFile.telegramFileId) continue;
+          // Находим videoUrl для этой обложки
+          for (const [videoUrl, thumbUrl] of Object.entries(nodeThumbnailUrls)) {
+            if (thumbUrl === thumbFile.url && !thumbnailFileIds[videoUrl]) {
+              thumbnailFileIds[videoUrl] = thumbFile.telegramFileId;
+              // Убираем из thumbnailUrls — теперь используем file_id
+              delete thumbnailUrls[videoUrl];
+              console.log(`[Generate] Обложка апгрейд до file_id для ${videoUrl.slice(-30)}: ${thumbFile.telegramFileId.slice(0, 20)}...`);
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('[Generate] Не удалось проверить file_id обложек из нод:', err);
+      }
+    }
+
+    if (Object.keys(nodeThumbnailUrls).length > 0) {
+      console.log(`[Generate] Fallback обложек из нод: ${Object.keys(nodeThumbnailUrls).length}`);
+    }
+
     // Генерируем код
     const generatePythonCode = await loadGenerator();
     const code = generatePythonCode(botDataForGenerator, {
@@ -100,6 +222,9 @@ export async function handleGenerateCode(req: Request, res: Response): Promise<v
       enableComments,
       enableLogging,
       projectId,
+      telegramFileIds,
+      thumbnailFileIds,
+      thumbnailUrls,
     });
 
     // Логирование результата

@@ -222,6 +222,30 @@ export async function startBot(projectId: number, token: string, tokenId: number
     console.log(`🔧 Генерация кода бота:`);
     console.log(`   userDatabaseEnabled:`, userDatabaseEnabled);
     
+    // Собираем attachedMediaThumbnails из нод project.json
+    const allNodesForThumbs: any[] = [];
+    const botDataAny = project.data as any;
+    if (Array.isArray(botDataAny?.sheets)) {
+      for (const sheet of botDataAny.sheets) {
+        if (Array.isArray(sheet?.nodes)) allNodesForThumbs.push(...sheet.nodes);
+      }
+    } else if (Array.isArray(botDataAny?.nodes)) {
+      allNodesForThumbs.push(...botDataAny.nodes);
+    }
+    const thumbnailUrls: Record<string, string> = {};
+    for (const node of allNodesForThumbs) {
+      const thumbs = node?.data?.attachedMediaThumbnails;
+      if (!thumbs) continue;
+      for (const [videoUrl, thumbUrl] of Object.entries(thumbs)) {
+        if (typeof thumbUrl === 'string' && !thumbnailUrls[videoUrl]) {
+          thumbnailUrls[videoUrl] = thumbUrl;
+        }
+      }
+    }
+    if (Object.keys(thumbnailUrls).length > 0) {
+      console.log(`[StartBot] Обложки из нод: ${Object.keys(thumbnailUrls).length}`);
+    }
+
     const botCode = generatePythonCode(project.data as any, {
       botName: project.name,
       userDatabaseEnabled,
@@ -230,6 +254,8 @@ export async function startBot(projectId: number, token: string, tokenId: number
       enableLogging: false,
       enableGroupHandlers: false,
       groups: [],
+      saveIncomingMedia: tokenSettings?.saveIncomingMedia === 1,
+      thumbnailUrls,
     });
     
     // Проверяем, содержит ли код функции БД
@@ -251,7 +277,8 @@ export async function startBot(projectId: number, token: string, tokenId: number
     assets.forEach((asset: string) => console.log(`     * ${asset}`));
 
     // Устанавливаем зависимости из requirements.txt перед запуском бота
-    const skipPipInstall = process.env.SKIP_PIP_INSTALL === 'true';
+    // По умолчанию pip install пропускается — зависимости устанавливаются вручную
+    const skipPipInstall = process.env.SKIP_PIP_INSTALL !== 'false';
     if (!skipPipInstall) {
     try {
       const { execSync } = await import('child_process');

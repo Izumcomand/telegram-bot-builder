@@ -6,7 +6,7 @@
  * @module MultiMediaSelector
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -19,6 +19,7 @@ import type { MediaFileData } from "./media-files-list";
 import { Upload, Plus, LinkIcon } from "lucide-react";
 import { uploadImageFromUrl } from "@lib/bot-generator/media/uploadImageFromUrl";
 import { toast } from "@/hooks/use-toast";
+import { useMediaFiles } from "../hooks/use-media";
 
 /** Пропсы компонента MultiMediaSelector */
 export interface MultiMediaSelectorProps {
@@ -31,6 +32,10 @@ export interface MultiMediaSelectorProps {
   keyboardType?: string;
   onNodeUpdate?: (nodeId: string, updates: Partial<any>) => void;
   nodeId?: string;
+  /** Текущие обложки из данных ноды: ключ — URL видео, значение — URL обложки */
+  thumbnailsMap?: Record<string, string>;
+  /** Callback при изменении обложек в ноде */
+  onThumbnailsChange?: (thumbnails: Record<string, string>) => void;
 }
 
 /**
@@ -45,7 +50,9 @@ export function MultiMediaSelector({
   nodeName = "node",
   keyboardType = "none",
   onNodeUpdate,
-  nodeId
+  nodeId,
+  thumbnailsMap = {},
+  onThumbnailsChange,
 }: MultiMediaSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [urlInput, setUrlInput] = useState('');
@@ -53,13 +60,34 @@ export function MultiMediaSelector({
 
   // Проверяем, включена ли клавиатура (для определения скрытых файлов)
   const hasKeyboard = keyboardType === 'inline' || keyboardType === 'reply';
-  
-  const files: MediaFileData[] = value.map((url, index) => ({
-    url,
-    fileName: `Файл ${index + 1}`,
-    fileType: getMediaTypeByUrl(url),
-    isHidden: hasKeyboard && index > 0 // Скрываем все файлы кроме первого
-  }));
+
+  /** Данные медиафайлов из БД — для получения имени, типа и telegramFileId по URL */
+  const { data: dbFiles } = useMediaFiles(projectId);
+
+  /** Маппинг URL → объект файла из БД для быстрого доступа к метаданным */
+  const dbFileByUrl = useMemo(() => {
+    const map = new Map<string, typeof dbFiles[0]>();
+    dbFiles?.forEach((f) => map.set(f.url, f));
+    return map;
+  }, [dbFiles]);
+
+  /** Формируем массив файлов с реальными именами и типами из БД (если доступны) */
+  const files: MediaFileData[] = value.map((url, index) => {
+    const dbFile = dbFileByUrl.get(url);
+    return {
+      url,
+      fileName: dbFile?.fileName ?? `Файл ${index + 1}`,
+      fileType: dbFile?.fileType ?? getMediaTypeByUrl(url),
+      telegramFileId: dbFile?.telegramFileId ?? null,
+      isHidden: hasKeyboard && index > 0,
+      mediaFileId: dbFile?.id,
+      thumbnailMediaId: null,
+      /** Обложка берётся из ноды project.json (thumbnailsMap), не из БД */
+      thumbnailUrl: thumbnailsMap[url] ?? null,
+      thumbnailDirectUrl: null,
+      projectId: projectId,
+    };
+  });
 
   const handleAddUrl = async () => {
     if (!urlInput.trim()) return;
@@ -125,7 +153,21 @@ export function MultiMediaSelector({
 
       {/* Files List */}
       {files.length > 0 && (
-        <MediaFilesList files={files} onRemove={handleRemoveFile} isHidden={(index) => hasKeyboard && index > 0} />
+        <MediaFilesList
+          files={files}
+          onRemove={handleRemoveFile}
+          isHidden={(index) => hasKeyboard && index > 0}
+          onThumbnailSet={(videoUrl, thumbUrl) => {
+            if (!onThumbnailsChange) return;
+            const updated = { ...thumbnailsMap };
+            if (thumbUrl === null) {
+              delete updated[videoUrl];
+            } else {
+              updated[videoUrl] = thumbUrl;
+            }
+            onThumbnailsChange(updated);
+          }}
+        />
       )}
 
       {/* Кнопка включения всех файлов и предупреждение */}

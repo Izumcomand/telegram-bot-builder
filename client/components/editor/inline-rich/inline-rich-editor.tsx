@@ -12,6 +12,7 @@ import { EditorContent } from './components/EditorContent';
 import { StatsBar } from './components/StatsBar';
 import { UsedVariablesList } from './components/UsedVariablesList';
 import { LinkInputRow } from './components/LinkInputRow';
+import { CodeLanguageRow } from './components/CodeLanguageRow';
 
 /**
  * Компонент встроенного редактора с поддержкой форматирования и фильтров переменных
@@ -24,7 +25,8 @@ export function InlineRichEditor(props: InlineRichEditorWithFiltersProps) {
     undo, redo, canUndo, canRedo,
     applyFormatting, handleKeyDown,
     copyFormatted, insertVariable, handleInput,
-    linkPopover, activeFormats, saveSelectionOnBlur
+    linkPopover, codeLanguage, activeFormats, saveSelectionOnBlur,
+    handlePaste
   } = useInlineRichEditor(props);
 
   const { variables, variableFilters, handleApplyFilter } = useVariableFilters({
@@ -55,6 +57,13 @@ export function InlineRichEditor(props: InlineRichEditorWithFiltersProps) {
         onRemove={linkPopover.removeLink}
         onClose={linkPopover.closeLinkPopover}
       />
+      <CodeLanguageRow
+        isOpen={codeLanguage.isOpen}
+        currentLanguage={codeLanguage.currentLanguage}
+        onApply={codeLanguage.applyLanguage}
+        onRemove={codeLanguage.removeLanguage}
+        containerRef={codeLanguage.rowRef}
+      />
       <EditorContent
         value={props.value}
         onInput={handleInput}
@@ -63,6 +72,7 @@ export function InlineRichEditor(props: InlineRichEditorWithFiltersProps) {
         innerRef={editorRef}
         onLinkClick={linkPopover.openLinkPopover}
         onBlur={saveSelectionOnBlur}
+        onPaste={handlePaste}
       >
         <StatsBar wordCount={wordCount} charCount={charCount} />
       </EditorContent>

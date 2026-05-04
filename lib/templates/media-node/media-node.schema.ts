@@ -33,6 +33,21 @@ export const mediaNodeParamsSchema = z.object({
   autoTransitionTo: z.string().optional(),
   /** Список получателей (если пустой — отправка пользователю) */
   messageSendRecipients: z.array(mediaSendRecipientSchema).optional().default([]),
+  /**
+   * Словарь кэшированных Telegram file_id.
+   * Ключ — URL или путь медиафайла, значение — Telegram file_id.
+   */
+  telegramFileIds: z.record(z.string(), z.string()).optional().default({}),
+  /**
+   * Словарь обложек видео: ключ — URL видео, значение — Telegram file_id обложки.
+   * Передаётся как thumbnail= в answer_video при первой отправке.
+   */
+  thumbnailFileIds: z.record(z.string(), z.string()).optional().default({}),
+  /**
+   * Словарь прямых URL обложек видео: ключ — URL видео, значение — URL обложки.
+   * Используется если thumbnailFileIds не содержит file_id для данного видео.
+   */
+  thumbnailUrls: z.record(z.string(), z.string()).optional().default({}),
 });
 
 /** Тип параметров медиа-ноды (выведен из схемы) */

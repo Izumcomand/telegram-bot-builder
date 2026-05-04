@@ -1,7 +1,8 @@
 /**
  * @fileoverview Единый парсер HTML → JSX для форматированного текста
  * @description Преобразует HTML-строку в массив JSX-элементов через DOMParser.
- * Поддерживает все теги форматирования Telegram и Markdown, включая tg-spoiler.
+ * Поддерживает все теги форматирования Telegram и Markdown, включая tg-spoiler
+ * и blockquote expandable (раскрывающаяся цитата).
  * @module formatting-parser
  */
 
@@ -17,16 +18,35 @@ interface KeyRef {
 }
 
 /**
- * CSS-класс для инлайн-кода и блоков pre
+ * CSS-класс для инлайн-кода (`<code>`) — моноширинный инлайн
  */
 const CODE_CLASS =
   'bg-gray-100 dark:bg-gray-800 px-1 py-0.5 rounded text-xs font-mono';
+
+/**
+ * CSS-класс для блока кода (`<pre>`) — тёмный блок с зелёным текстом
+ */
+const PRE_CLASS =
+  'block my-1.5 px-3 py-2 rounded-lg bg-slate-900 dark:bg-slate-950 border border-slate-700/60 text-emerald-400 dark:text-emerald-300 font-mono text-xs leading-relaxed overflow-x-auto whitespace-pre-wrap break-words';
+
+/**
+ * CSS-класс для бейджа языка программирования над блоком кода
+ */
+const LANG_BADGE_CLASS =
+  'inline-block mb-1 px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-slate-700/80 text-slate-300 border border-slate-600/50 select-none';
 
 /**
  * CSS-класс для блока цитаты
  */
 const BLOCKQUOTE_CLASS =
   'border-l-4 border-blue-500 pl-3 my-2 italic text-slate-600 dark:text-slate-400';
+
+/**
+ * CSS-класс для раскрывающейся цитаты Telegram (<blockquote expandable>).
+ * Визуально отличается синей пунктирной рамкой.
+ */
+const EXPANDABLE_BLOCKQUOTE_CLASS =
+  'border-l-4 border-blue-400 pl-3 my-2 italic text-slate-600 dark:text-slate-400 relative';
 
 /**
  * CSS-класс для спойлера в режиме просмотра (FormattedText).
@@ -84,15 +104,34 @@ function nodeToJsx(node: Node, keyRef: KeyRef): JSX.Element | null {
       return <span key={keyRef.current++} className="line-through">{children}</span>;
 
     case 'CODE':
-    case 'PRE':
       return <code key={keyRef.current++} className={CODE_CLASS}>{children}</code>;
 
-    case 'BLOCKQUOTE':
+    case 'PRE': {
+      // Проверяем наличие дочернего <code class="language-XXX">
+      const codeChild = el.querySelector('code[class*="language-"]');
+      const langMatch = codeChild?.className.match(/language-(\S+)/);
+      const lang = langMatch ? langMatch[1] : null;
       return (
-        <blockquote key={keyRef.current++} className={BLOCKQUOTE_CLASS}>
+        <div key={keyRef.current++} className="my-1.5">
+          {lang && (
+            <span className={LANG_BADGE_CLASS}>{lang}</span>
+          )}
+          <pre className={PRE_CLASS}>{children}</pre>
+        </div>
+      );
+    }
+
+    case 'BLOCKQUOTE': {
+      const isExpandable = el.hasAttribute('expandable');
+      return (
+        <blockquote key={keyRef.current++} className={isExpandable ? EXPANDABLE_BLOCKQUOTE_CLASS : BLOCKQUOTE_CLASS}>
+          {isExpandable && (
+            <span className="text-[10px] text-blue-400 font-medium not-italic block mb-1">▼ Раскрывающаяся цитата</span>
+          )}
           {children}
         </blockquote>
       );
+    }
 
     case 'A': {
       const href = (el as HTMLAnchorElement).getAttribute('href') ?? '#';

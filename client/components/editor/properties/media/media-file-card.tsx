@@ -3,13 +3,17 @@
  *
  * Отображает информацию о файле с кнопками просмотра и удаления.
  * Поддерживает переменные вида {var.path} — показывает иконку вместо img.
+ * Показывает кэшированный Telegram file_id если он есть.
+ * Для видео — отображает блок выбора обложки.
  *
  * @module MediaFileCard
  */
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Eye, X } from "lucide-react";
+import { Eye, X, Copy, Check } from "lucide-react";
+import { ThumbnailSelector } from "./thumbnail-selector";
 
 /**
  * Проверяет, является ли строка переменной вида {var.path}
@@ -22,14 +26,36 @@ function isVariablePlaceholder(url: string): boolean {
 
 /** Пропсы компонента MediaFileCard */
 export interface MediaFileCardProps {
+  /** URL файла */
   url: string;
+  /** Имя файла */
   fileName: string;
+  /** Тип файла */
   fileType: string;
+  /** Описание файла */
   description?: string;
+  /** Теги файла */
   tags?: string[];
+  /** Кэшированный Telegram file_id (появляется после первой отправки ботом) */
+  telegramFileId?: string | null;
+  /** Callback для предпросмотра */
   onPreview?: () => void;
+  /** Callback для удаления */
   onRemove?: () => void;
+  /** Флаг скрытого файла */
   isHidden?: boolean;
+  /** ID видеофайла в БД (нужен для установки обложки) */
+  mediaFileId?: number;
+  /** ID текущей обложки */
+  thumbnailMediaId?: number | null;
+  /** URL текущей обложки */
+  thumbnailUrl?: string | null;
+  /** Прямой URL обложки (из поля thumbnailUrl, без FK) */
+  thumbnailDirectUrl?: string | null;
+  /** ID проекта (нужен для загрузки фото для выбора обложки) */
+  projectId?: number;
+  /** Callback при установке/сбросе обложки — передаёт URL видео и URL обложки */
+  onThumbnailSet?: (videoUrl: string, thumbnailUrl: string | null) => void;
 }
 
 /** Иконка для типа файла */
@@ -44,6 +70,8 @@ const FILE_ICONS: Record<string, string> = {
 
 /**
  * Компонент карточки медиафайла
+ * @param props - Свойства компонента
+ * @returns JSX элемент
  */
 export function MediaFileCard({
   url,
@@ -51,16 +79,36 @@ export function MediaFileCard({
   fileType,
   description,
   tags,
+  telegramFileId,
   onPreview,
   onRemove,
-  isHidden = false
+  isHidden = false,
+  mediaFileId,
+  thumbnailMediaId,
+  thumbnailUrl,
+  thumbnailDirectUrl,
+  projectId,
+  onThumbnailSet,
 }: MediaFileCardProps) {
+  /** Флаг успешного копирования file_id */
+  const [copied, setCopied] = useState(false);
+
   const handlePreview = () => {
     if (onPreview) {
       onPreview();
     } else if (fileType === 'image' || fileType === 'photo') {
       window.open(url, '_blank');
     }
+  };
+
+  /**
+   * Копирует Telegram file_id в буфер обмена
+   */
+  const handleCopyFileId = async () => {
+    if (!telegramFileId) return;
+    await navigator.clipboard.writeText(telegramFileId);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -78,6 +126,20 @@ export function MediaFileCard({
               <span className="text-lg">🖼️</span>
             ) : (
               <img src={url} alt={fileName} className="w-full h-full object-cover" />
+            )
+          ) : fileType === 'video' ? (
+            isVariablePlaceholder(url) ? (
+              // Переменная — показываем иконку вместо video
+              <span className="text-lg sm:text-xl">{FILE_ICONS.video}</span>
+            ) : (
+              // Превью видеофайла
+              <video
+                src={`${url}#t=0.1`}
+                className="w-full h-full object-cover"
+                muted
+                preload="metadata"
+                onError={(e) => { (e.target as HTMLVideoElement).style.display = 'none'; }}
+              />
             )
           ) : (
             <span className="text-lg sm:text-xl">{FILE_ICONS[fileType]}</span>
@@ -121,7 +183,7 @@ export function MediaFileCard({
       </div>
 
       {/* Details */}
-      {(description || tags?.length) && (
+      {(description || tags?.length || telegramFileId !== undefined) && (
         <div className="mt-3 space-y-2 bg-slate-50/50 dark:bg-slate-900/30 rounded-lg p-2 border border-slate-200/40 dark:border-slate-800/40">
           {description && (
             <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300">
@@ -134,6 +196,47 @@ export function MediaFileCard({
               <i className="fas fa-tag text-xs mr-1"></i>{tag}
             </Badge>
           ))}
+          {/* Telegram File ID */}
+          {telegramFileId !== undefined && (
+            <div className="flex items-center gap-2 pt-1">
+              <span className="text-xs text-slate-500 dark:text-slate-400 shrink-0">🤖 File ID:</span>
+              {telegramFileId ? (
+                <>
+                  <span className="text-xs font-mono text-slate-600 dark:text-slate-300 truncate flex-1">
+                    {telegramFileId}
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleCopyFileId}
+                    className="h-5 w-5 p-0 shrink-0"
+                    title="Скопировать File ID"
+                  >
+                    {copied
+                      ? <Check className="w-3 h-3 text-emerald-500" />
+                      : <Copy className="w-3 h-3 text-slate-400" />
+                    }
+                  </Button>
+                </>
+              ) : (
+                <span className="text-xs text-slate-400 dark:text-slate-500 italic">
+                  появится после первой отправки ботом
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Выбор обложки для видео */}
+      {fileType === 'video' && projectId && (
+        <div className="mt-2">
+          <ThumbnailSelector
+            currentThumbnailUrl={thumbnailUrl}
+            projectId={projectId}
+            videoFileId={mediaFileId}
+            onThumbnailSet={(thumbUrl) => onThumbnailSet?.(url, thumbUrl)}
+          />
         </div>
       )}
     </div>

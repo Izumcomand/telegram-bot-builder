@@ -3,7 +3,7 @@
  * @module shared/schema/tables/media-files
  */
 
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, uniqueIndex, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { z } from "zod";
 
 import { botProjects } from "./bot-projects";
@@ -36,11 +36,20 @@ export const mediaFiles = pgTable("media_files", {
   isPublic: integer("is_public").default(0),
   /** Количество использований файла */
   usageCount: integer("usage_count").default(0),
+  /** Кэшированный Telegram file_id для быстрой повторной отправки */
+  telegramFileId: text("telegram_file_id"),
+  /** ID медиафайла-обложки (ссылка на фото из той же таблицы, только для видео) */
+  thumbnailMediaId: integer("thumbnail_media_id").references((): AnyPgColumn => mediaFiles.id, { onDelete: "set null" }),
+  /** URL обложки видео (альтернатива thumbnailMediaId — для внешних URL без скачивания) */
+  thumbnailUrl: text("thumbnail_url"),
   /** Дата создания файла */
   createdAt: timestamp("created_at").defaultNow(),
   /** Дата последнего обновления файла */
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => ({
+  /** Уникальный индекс: один URL на проект (для ON CONFLICT при сохранении file_id) */
+  urlProjectUnique: uniqueIndex("media_files_url_project_id_unique").on(table.url, table.projectId),
+}));
 
 /** Схема для вставки данных медиафайла */
 export const insertMediaFileSchema = z.object({
@@ -64,6 +73,12 @@ export const insertMediaFileSchema = z.object({
   tags: z.array(z.string()).default([]),
   /** Флаг публичности (0 = приватный, 1 = публичный) */
   isPublic: z.number().min(0).max(1).default(0),
+  /** Кэшированный Telegram file_id (заполняется автоматически после первой отправки) */
+  telegramFileId: z.string().nullable().optional(),
+  /** ID обложки видео (опционально, только для видео) */
+  thumbnailMediaId: z.number().int().nullable().optional(),
+  /** URL обложки видео (строка, без FK) */
+  thumbnailUrl: z.string().nullable().optional(),
 });
 
 /** Тип записи медиафайла */

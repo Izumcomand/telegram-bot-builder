@@ -79,7 +79,8 @@ export default defineConfig(async () => {
   return {
     plugins: [
       react(),
-      runtimeErrorOverlay(),
+      // runtimeErrorOverlay использует jsxDEV (dev-only runtime) — подключаем только в dev
+      process.env.NODE_ENV !== 'production' && runtimeErrorOverlay(),
       cartographer,
       cryptoPolyfill,
       serverOnlyModules
@@ -111,11 +112,12 @@ export default defineConfig(async () => {
       hmr: {
         overlay: false,
         clientPort: 5000
-      }
+      },
     },
     define: {
       global: 'globalThis',
-      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development')
+      // Не переопределяем NODE_ENV вручную — Vite сам подставляет правильное значение
+      // при production сборке. Хардкод 'development' как fallback ломал JSX runtime.
     },
     optimizeDeps: {
       include: ['buffer'],
