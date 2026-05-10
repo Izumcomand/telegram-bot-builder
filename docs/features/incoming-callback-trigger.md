@@ -131,11 +131,23 @@ async def incoming_callback_trigger_handler(callback_query: types.CallbackQuery)
 | Файл | Объём | Изменение |
 |------|-------|-----------|
 | `client/components/editor/sidebar/massive/triggers/index.ts` | ~2 строки | Экспорт нового триггера |
-| `client/components/editor/sidebar/constants.ts` | ~1 строка | Добавить в категорию "Триггеры" |
-| `client/components/editor/properties/utils/node-constants.ts` | ~1 строка | Добавить в `TRIGGER_NODE_TYPES` |
-| `client/components/editor/properties/utils/node-formatters.ts` | ~1 строка | Добавить отображаемое имя |
+| `client/components/editor/sidebar/constants.ts` | ~1 строка | Добавить в нужную категорию (Триггеры / Интеграции / и т.д.) |
+| `client/components/editor/properties/utils/node-constants.ts` | ~1 строка | Добавить в `TRIGGER_NODE_TYPES` или `MANAGEMENT_NODE_TYPES` |
+| `client/components/editor/properties/utils/node-formatters.ts` | ~1 строка | Добавить отображаемое имя в `getNodeTypeLabel()` |
 | `client/components/editor/properties/components/main/properties-panel.tsx` | ~6 строк | Импорт и условие рендеринга панели свойств |
 | `client/components/editor/canvas/canvas-node/canvas-node.tsx` | ~4 строки | Импорт и рендеринг превью |
+| `client/components/editor/canvas/canvas-node/node-icons.ts` | ~1 строка | Добавить иконку FontAwesome (`fas fa-...`) для нового типа |
+| `client/components/editor/canvas/canvas-node/node-colors.ts` | ~1 строка | Добавить цветовой градиент для иконки на холсте |
+| `client/components/editor/canvas/canvas-node/node-header.tsx` | ~5 строк | Добавить `case 'new_type'` в `renderTitle()` с текстом и цветом |
+| `client/components/editor/properties/components/layout/properties-header.tsx` | ~3 строки | Добавить в `nodeTypeNames`, `nodeIcons`, `nodeColors` для шапки панели свойств |
+| `client/components/editor/properties/utils/variables-utils.ts` | ~10 строк | Добавить блок извлечения переменных из нового типа узла (если узел сохраняет результат в переменную) |
+| `client/components/editor/inline-rich/components/variable-display-utils.tsx` | ~2 строки | Добавить бейдж в `getBadgeText()` и блок отображения в `getNodeInfo()` для нового типа узла |
+
+> **Важно:** `node-icons.ts` и `node-colors.ts` отвечают за иконку/цвет блока на **холсте** (NodeHeader).
+> `properties-header.tsx` отвечает за иконку/цвет/название в **шапке панели свойств** (селектор типа узла).
+> `variables-utils.ts` отвечает за то, чтобы переменная из узла **появилась в селекторе переменных**.
+> `variable-display-utils.tsx` отвечает за **отображение переменной** в дропдауне — иконку, бейдж, описание.
+> Все четыре места нужно обновлять при добавлении узла, который сохраняет результат в переменную.
 
 ---
 

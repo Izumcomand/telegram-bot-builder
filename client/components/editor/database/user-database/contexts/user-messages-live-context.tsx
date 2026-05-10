@@ -66,13 +66,44 @@ export interface NewUserLiveEvent {
     isPremium: number;
     /** Дата регистрации в ISO-формате */
     registeredAt: string;
+    /** Параметр deep link при первом визите */
+    deepLinkParam?: string | null;
+    /** ID пользователя-реферера */
+    referrerId?: string | null;
   };
   /** Временная метка события */
   timestamp: string;
 }
 
 /** Все типы live-событий */
-export type LiveEvent = NewMessageLiveEvent | NewUserLiveEvent;
+export type LiveEvent = NewMessageLiveEvent | NewUserLiveEvent | BroadcastProgressLiveEvent;
+
+/**
+ * Структура WS-события прогресса рассылки
+ */
+export interface BroadcastProgressLiveEvent {
+  /** Тип события */
+  type: 'broadcast-progress';
+  /** Идентификатор проекта */
+  projectId: number;
+  /** Данные прогресса */
+  data: {
+    /** Идентификатор рассылки */
+    broadcastId: number;
+    /** Отправлено сообщений */
+    sentCount: number;
+    /** Доставлено успешно */
+    deliveredCount: number;
+    /** Ошибок при отправке */
+    failedCount: number;
+    /** Всего получателей */
+    totalCount: number;
+    /** Текущий статус */
+    status: 'running' | 'stopped' | 'done';
+  };
+  /** Временная метка события */
+  timestamp: string;
+}
 
 /** Тип колбэка-подписчика на все live-события */
 type LiveEventListener = (event: LiveEvent) => void;
@@ -111,6 +142,7 @@ export function UserMessagesLiveProvider({ projectId, children }: UserMessagesLi
   const listenersRef = useRef<Set<LiveEventListener>>(new Set());
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const destroyedRef = useRef(false);
 
   useEffect(() => {
@@ -127,15 +159,32 @@ export function UserMessagesLiveProvider({ projectId, children }: UserMessagesLi
         try {
           const msg = JSON.parse(event.data as string) as LiveEvent;
           // Пропускаем только поддерживаемые типы событий
-          if (msg.type !== 'new-message' && msg.type !== 'new-user') return;
+          if (msg.type !== 'new-message' && msg.type !== 'new-user' && msg.type !== 'broadcast-progress') return;
+          console.log(`[LiveProvider] событие ${msg.type} projectId=${msg.projectId} (ожидаем ${projectId}), подписчиков: ${listenersRef.current.size}`);
           if (msg.projectId !== projectId) return;
+          console.log(`[LiveProvider] → рассылаем ${listenersRef.current.size} подписчикам`);
           listenersRef.current.forEach((fn) => fn(msg));
         } catch {
           // Игнорируем некорректные сообщения
         }
       };
 
+      ws.onopen = () => {
+        console.log(`[LiveProvider] WS подключён, projectId=${projectId}`);
+        // Ping каждые 20 сек чтобы Railway не закрыл idle соединение
+        pingTimerRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ command: 'ping' }));
+          }
+        }, 20_000);
+      };
+
       ws.onclose = () => {
+        console.log(`[LiveProvider] WS отключён, projectId=${projectId}, реконнект через 3с`);
+        if (pingTimerRef.current) {
+          clearInterval(pingTimerRef.current);
+          pingTimerRef.current = null;
+        }
         wsRef.current = null;
         if (!destroyedRef.current) {
           reconnectTimerRef.current = setTimeout(connect, 3000);
@@ -150,6 +199,7 @@ export function UserMessagesLiveProvider({ projectId, children }: UserMessagesLi
     return () => {
       destroyedRef.current = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (pingTimerRef.current) clearInterval(pingTimerRef.current);
       wsRef.current?.close();
       wsRef.current = null;
     };

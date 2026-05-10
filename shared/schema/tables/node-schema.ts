@@ -62,7 +62,7 @@ export const nodeSchema = z.object({
    * @deprecated Canonical content node is `message`.
    * `start` and `command` are kept only for backward compatibility with legacy projects.
    */
-  type: z.enum(['start', 'message', 'command', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'group_message_trigger', 'callback_trigger', 'managed_bot_updated_trigger', 'sticker', 'voice', 'animation', 'location', 'contact', 'pin_message', 'unpin_message', 'delete_message', 'forward_message', 'ban_user', 'unban_user', 'mute_user', 'unmute_user', 'kick_user', 'promote_user', 'demote_user', 'admin_rights', 'photo', 'video', 'audio', 'document', 'keyboard', 'input', 'condition', 'broadcast', 'client_auth', 'media', 'create_forum_topic', 'http_request', 'get_managed_bot_token', 'answer_callback_query', 'edit_message']),
+  type: z.enum(['start', 'message', 'command', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'group_message_trigger', 'callback_trigger', 'managed_bot_updated_trigger', 'sticker', 'voice', 'animation', 'location', 'contact', 'pin_message', 'unpin_message', 'delete_message', 'forward_message', 'ban_user', 'unban_user', 'mute_user', 'unmute_user', 'kick_user', 'promote_user', 'demote_user', 'admin_rights', 'photo', 'video', 'audio', 'document', 'keyboard', 'input', 'condition', 'broadcast', 'client_auth', 'media', 'create_forum_topic', 'http_request', 'get_managed_bot_token', 'answer_callback_query', 'edit_message', 'set_variable', 'psql_query', 'convert_file']),
   /** Позиция узла на холсте */
   position: z.object({
     /** Координата X */
@@ -519,7 +519,13 @@ export const nodeSchema = z.object({
     adminChatIdSource: z.enum(['manual', 'variable', 'current_chat']).default('current_chat'),
     /** Имя переменной с ID чата */
     adminChatVariableName: z.string().optional(),
-    /** Массив URL прикреплённых медиафайлов */
+    /**
+     * Массив прикреплённых медиафайлов.
+     * Каждый элемент — строка одного из форматов:
+     * - URL или путь: `"/uploads/123/file.mp4"`, `"https://..."`
+     * - Переменная: `"{var.photo}"`
+     * - Telegram file_id по токенам (JSON): `'{"__type":"file_id","mediaType":"photo","fileIdsByToken":{"42":"AgACAgI..."}}'`
+     */
     attachedMedia: z.array(z.string()).default([]),
     /** Произвольный текст (используется в некоторых узлах) */
     text: z.string().optional(),
@@ -711,6 +717,39 @@ export const nodeSchema = z.object({
     httpRequestPaginationMaxPages: z.number().default(20).optional(),
     /** Словарь обложек медиафайлов: ключ — URL видео, значение — URL обложки */
     attachedMediaThumbnails: z.record(z.string(), z.string()).optional().default({}),
+    /** SQL-запрос для узла psql_query, поддерживает {переменные} */
+    query: z.string().default(''),
+    /** Переменная для сохранения результата запроса */
+    saveResultTo: z.string().default(''),
+    /** Формат результата: json — массив объектов, text — строка, first_row — первая строка, affected — количество строк */
+    resultFormat: z.enum(['json', 'text', 'first_row', 'affected']).default('first_row'),
+    /** Шаблон строки для формата text, например "{name} — {value}" */
+    textTemplate: z.string().default(''),
+    /** Присваивания переменных для узла set_variable */
+    assignments: z.array(z.object({
+      /** Уникальный идентификатор присваивания */
+      id: z.string(),
+      /** Имя переменной для записи */
+      variable: z.string(),
+      /** Значение или шаблон с {переменными} */
+      value: z.string(),
+      /** Режим присваивания: "text" — шаблон, "expression" — арифметическое выражение */
+      mode: z.enum(['text', 'expression']).default('text'),
+    })).default([]),
+    /** Режим конвертации файла: toFile — данные в файл */
+    convertFileMode: z.enum(['toFile']).default('toFile'),
+    /** Входная переменная с json-массивом для convert_file */
+    convertFileInputVariable: z.string().default(''),
+    /** Формат выходного файла: csv или json */
+    convertFileFormat: z.enum(['csv', 'json']).default('csv'),
+    /** Имя выходного файла, поддерживает {date} */
+    convertFileFileName: z.string().default('export_{date}.csv'),
+    /** Разделитель для CSV формата */
+    convertFileCsvDelimiter: z.string().default(','),
+    /** Включать заголовки в CSV */
+    convertFileIncludeHeaderRow: z.boolean().default(true),
+    /** Переменная для сохранения file-объекта */
+    convertFileOutputVariable: z.string().default(''),
   }),
 });
 

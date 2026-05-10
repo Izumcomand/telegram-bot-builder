@@ -32,6 +32,18 @@ interface MessageBubbleProps {
   bot?: UserBotData | null;
   /** Идентификатор проекта для прокси аватара */
   projectId?: number;
+  /** Идентификатор токена для резолва аватара */
+  tokenId?: number | null;
+}
+
+/**
+ * Проверяет, отправлено ли сообщение через рассылку
+ * @param message - Сообщение
+ * @returns true если сообщение из рассылки
+ */
+function isBroadcastMessage(message: BotMessageWithMedia): boolean {
+  const data = message.messageData as Record<string, unknown> | null;
+  return !!data?.sentFromBroadcast;
 }
 
 /**
@@ -56,7 +68,7 @@ function hasVisibleMedia(message: BotMessageWithMedia): boolean {
 /**
  * Компонент отображения одного сообщения
  */
-export function MessageBubble({ message, index, user, bot, projectId }: MessageBubbleProps) {
+export function MessageBubble({ message, index, user, bot, projectId, tokenId }: MessageBubbleProps) {
   const isBot = message.messageType === 'bot';
   const isUser = message.messageType === 'user';
   const messageType: 'bot' | 'user' = isBot ? 'bot' : 'user';
@@ -77,6 +89,7 @@ export function MessageBubble({ message, index, user, bot, projectId }: MessageB
           user={isUser ? user : null}
           bot={isBot ? bot : null}
           projectId={projectId}
+          tokenId={tokenId ?? message.tokenId}
         />
 
         <div className="flex flex-col gap-1">
@@ -98,6 +111,12 @@ export function MessageBubble({ message, index, user, bot, projectId }: MessageB
           )}
 
           <MessageTimestamp createdAt={message.createdAt} />
+
+          {isBot && isBroadcastMessage(message) && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              📢 Рассылка
+            </span>
+          )}
         </div>
       </div>
     </div>

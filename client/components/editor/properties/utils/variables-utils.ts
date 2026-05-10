@@ -359,6 +359,60 @@ export function extractVariables(allNodes: Node[]): VariablesResult {
     }
   });
 
+  // Добавляем переменные из узлов set_variable
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'set_variable') return;
+    const assignments: Array<{ id: string; variable: string; value: string }> =
+      (node.data as any)?.assignments || [];
+    assignments.forEach(({ variable }) => {
+      if (!variable?.trim()) return;
+      const mapKey = `set_variable__${node.id}__${variable}`;
+      if (!variablesMap.has(mapKey)) {
+        variablesMap.set(mapKey, {
+          name: variable,
+          nodeId: node.id,
+          nodeType: 'set_variable' as any,
+          sourceTable: 'bot_users',
+          description: `Установлена узлом «Установить переменные»`,
+        });
+      }
+    });
+  });
+
+  // Добавляем переменные от psql_query-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'psql_query') return;
+    const data = node.data as any;
+    if (!data.saveResultTo?.trim()) return;
+    const key = `psql_query__${node.id}`;
+    if (!variablesMap.has(key)) {
+      variablesMap.set(key, {
+        name: data.saveResultTo,
+        nodeId: node.id,
+        nodeType: 'psql_query' as any,
+        sourceTable: 'bot_users',
+        description: `Результат SQL-запроса (${data.resultFormat || 'first_row'})`,
+      });
+    }
+  });
+
+  // Добавляем переменные от convert_file-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'convert_file') return;
+    const data = node.data as any;
+    if (!data.convertFileOutputVariable?.trim()) return;
+    const key = `convert_file__${node.id}`;
+    if (!variablesMap.has(key)) {
+      variablesMap.set(key, {
+        name: data.convertFileOutputVariable,
+        nodeId: node.id,
+        nodeType: 'convert_file' as any,
+        sourceTable: 'bot_users',
+        description: `Файл (${data.convertFileFormat || 'csv'}) из ${data.convertFileInputVariable || '?'}`,
+      });
+    }
+  });
+
   // Добавляем системные переменные
   SYSTEM_VARIABLES.forEach(v => { 
     if (!variablesMap.has(v.name)) {

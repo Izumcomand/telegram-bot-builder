@@ -25,8 +25,9 @@ import { NodeSender } from './components/node-sender';
 /**
  * Дедуплицирует и сортирует сообщения по id и времени создания.
  * HTTP-сообщения имеют приоритет над WS-дублями.
+ * Оптимистичные сообщения (id < 0) отбрасываются если HTTP уже вернул данные.
  * @param httpMessages - Сообщения из HTTP (основной источник)
- * @param liveMessages - Сообщения из WebSocket (live)
+ * @param liveMessages - Сообщения из WebSocket (live) и оптимистичные
  * @returns Объединённый отсортированный массив без дублей
  */
 function mergeMessages(
@@ -34,7 +35,12 @@ function mergeMessages(
   liveMessages: BotMessageWithMedia[],
 ): BotMessageWithMedia[] {
   const httpIds = new Set(httpMessages.map((m) => m.id));
-  const uniqueLive = liveMessages.filter((m) => !httpIds.has(m.id));
+  const uniqueLive = liveMessages.filter((m) => {
+    // Оптимистичные сообщения (id < 0) показываем только пока HTTP ещё не вернул данные
+    if (m.id < 0) return httpMessages.length === 0;
+    // WS-дубли реальных сообщений — пропускаем
+    return !httpIds.has(m.id);
+  });
   const merged = [...httpMessages, ...uniqueLive];
   merged.sort((a, b) => {
     const ta = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -182,6 +188,7 @@ export function DialogPanel({
                 user={message.messageType === 'user' ? user : null}
                 bot={message.messageType === 'bot' ? bot : null}
                 projectId={projectId}
+                tokenId={selectedTokenId}
               />
             ))}
           </div>
@@ -192,8 +199,9 @@ export function DialogPanel({
 
       <DialogInput
         isPending={sendMessageMutation.isPending}
-        onSend={(text) => {
-          sendMessageMutation.mutate({ messageText: text });
+        projectId={projectId}
+        onSend={(text, mediaUrls) => {
+          sendMessageMutation.mutate({ messageText: text, mediaUrls });
         }}
       />
 

@@ -48,6 +48,20 @@ function getMediaIcon(type: string): string {
 }
 
 /**
+ * Маппинг текстовых плейсхолдеров на красивый вид с иконкой
+ */
+const MEDIA_PLACEHOLDER_MAP: Record<string, string> = {
+  '[Фото]': '📷 Фото',
+  '[Photo]': '📷 Фото',
+  '[Видео]': '🎬 Видео',
+  '[Аудио]': '🎵 Аудио',
+  '[Голосовое]': '🎤 Голосовое',
+  '[Документ]': '📄 Документ',
+  '[Стикер]': '🎭 Стикер',
+  '[медиа]': '📎 Медиафайл',
+};
+
+/**
  * Компонент ячейки последнего сообщения пользователя.
  * Сначала показывает данные из JOIN (без запроса), затем обновляется через WS.
  * @param props - Пропсы компонента
@@ -73,7 +87,12 @@ export function DesktopLastMessageCell({ user, projectId }: DesktopLastMessageCe
 
   // Определяем текст: WS-кэш → JOIN-данные → HTTP-данные → заглушка
   const rawText = lastMessage?.messageText ?? userWithMsg.lastMessageText;
-  let messageText = (typeof rawText === 'string' && rawText.trim()) || '';
+  /** Стрипаем HTML-теги для превью — показываем чистый текст без разметки */
+  const strippedText = typeof rawText === 'string'
+    ? rawText.replace(/<[^>]*>/g, '').trim()
+    : '';
+  /** Заменяем текстовые плейсхолдеры медиа на красивый вид с иконкой */
+  let messageText = MEDIA_PLACEHOLDER_MAP[strippedText] ?? strippedText;
 
   if (!messageText && lastMessage?.media && lastMessage.media.length > 0) {
     const mediaTypes = [...new Set(lastMessage.media.map((m: any) => m.fileType ?? m.type ?? 'unknown'))];

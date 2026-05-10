@@ -39,6 +39,9 @@ export const MANAGEMENT_NODE_TYPES = [
   'create_forum_topic',
   'http_request',
   'get_managed_bot_token' as any,
+  'set_variable' as any,
+  'psql_query' as any,
+  'convert_file' as any,
 ] as const;
 
 /**

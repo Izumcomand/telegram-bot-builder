@@ -11,9 +11,6 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/queryClient';
 import { BotMessageWithMedia } from '../types';
 
-/** Задержка перед refetch после успешной отправки (мс), чтобы дать WS доставить реальное сообщение */
-const REFETCH_DELAY_MS = 1500;
-
 /**
  * Параметры хука useSendMessage
  */
@@ -57,7 +54,15 @@ export function useSendMessage({
   const tempIdRef = useRef<number | null>(null);
 
   return useMutation({
-    mutationFn: async ({ messageText }: { messageText: string }) => {
+    mutationFn: async ({
+      messageText,
+      mediaUrls = [],
+    }: {
+      /** Текст сообщения */
+      messageText: string;
+      /** Массив URL медиафайлов (опционально) */
+      mediaUrls?: string[];
+    }) => {
       if (!userId) {
         throw new Error('No user selected');
       }
@@ -65,14 +70,28 @@ export function useSendMessage({
       return apiRequest(
         'POST',
         buildUsersApiUrl(`/api/projects/${projectId}/users/${userId}/send-message`, selectedTokenId),
-        { messageText }
+        { messageText, mediaUrls }
       );
     },
 
-    onMutate: ({ messageText }) => {
+    onMutate: ({ messageText, mediaUrls = [] }) => {
       // Генерируем временный отрицательный id, чтобы не конфликтовать с реальными id из БД
       const tempId = Date.now() * -1;
       tempIdRef.current = tempId;
+
+      /** Данные медиа для оптимистичного отображения — первый файл из списка */
+      const mediaMessageData: Record<string, unknown> = {};
+      if (mediaUrls.length > 0) {
+        const firstUrl = mediaUrls[0];
+        // Определяем тип по расширению для немедленного отображения
+        const ext = firstUrl.split('.').pop()?.toLowerCase() ?? '';
+        const isPhoto = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+        const isVideo = ['mp4', 'avi', 'mov', 'webm'].includes(ext);
+        const isAudio = ['mp3', 'wav', 'ogg', 'm4a'].includes(ext);
+        const mediaType = isPhoto ? 'photo' : isVideo ? 'video' : isAudio ? 'audio' : 'document';
+        mediaMessageData.broadcastMediaUrl = firstUrl;
+        mediaMessageData.broadcastMediaType = mediaType;
+      }
 
       const optimisticMsg: BotMessageWithMedia = {
         id: tempId,
@@ -81,7 +100,7 @@ export function useSendMessage({
         userId: userIdStr ?? String(userId ?? ''),
         messageType: 'bot',
         messageText,
-        messageData: {},
+        messageData: mediaMessageData,
         nodeId: null,
         primaryMediaId: null,
         createdAt: new Date(),
@@ -96,10 +115,7 @@ export function useSendMessage({
         title: 'Сообщение отправлено',
         description: 'Сообщение успешно отправлено пользователю',
       });
-      // Задержка перед refetch — даём WS время доставить реальное сообщение
-      setTimeout(() => {
-        onSent?.();
-      }, REFETCH_DELAY_MS);
+      onSent?.();
     },
 
     onError: () => {

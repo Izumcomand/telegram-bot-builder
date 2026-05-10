@@ -6,6 +6,7 @@
 
 import { useState } from 'react';
 import { ImageLightbox } from './image-lightbox';
+import { CopyFileIdButton } from './copy-file-id-button';
 
 /**
  * Тип медиа из messageData
@@ -131,13 +132,17 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
     const proxyUrl = buildProxyUrl(photo.file_id, projectId, tokenId);
     return (
       <>
-        <div className="rounded-lg overflow-hidden max-w-[200px]">
+        <div className="group relative rounded-lg overflow-hidden max-w-[200px]">
           <img
             src={proxyUrl}
             alt="Фото"
             className="w-full h-auto rounded-lg cursor-zoom-in"
             onClick={() => setLightboxSrc(proxyUrl)}
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+          <CopyFileIdButton
+            fileId={photo.file_id}
+            className="absolute top-1 right-1"
           />
         </div>
         {lightboxSrc && (
@@ -150,12 +155,16 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
   const video = extractMedia(messageData, 'video');
   if (video?.file_id) {
     return (
-      <div className="rounded-lg overflow-hidden max-w-[280px]">
+      <div className="group relative rounded-lg overflow-hidden max-w-[280px]">
         <video
           src={buildProxyUrl(video.file_id, projectId, tokenId)}
           controls
           className="w-full h-auto rounded-lg"
           preload="metadata"
+        />
+        <CopyFileIdButton
+          fileId={video.file_id}
+          className="absolute top-1 right-1"
         />
       </div>
     );
@@ -164,13 +173,14 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
   const audio = extractMedia(messageData, 'audio');
   if (audio?.file_id) {
     return (
-      <div className="rounded-lg bg-muted/40 p-2 max-w-[280px]">
+      <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-2 max-w-[280px]">
         <audio
           src={buildProxyUrl(audio.file_id, projectId, tokenId)}
           controls
           className="w-full"
           preload="metadata"
         />
+        <CopyFileIdButton fileId={audio.file_id} />
       </div>
     );
   }
@@ -178,13 +188,14 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
   const voice = extractMedia(messageData, 'voice');
   if (voice?.file_id) {
     return (
-      <div className="rounded-lg bg-muted/40 p-2 max-w-[280px]">
+      <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-2 max-w-[280px]">
         <audio
           src={buildProxyUrl(voice.file_id, projectId, tokenId)}
           controls
           className="w-full"
           preload="metadata"
         />
+        <CopyFileIdButton fileId={voice.file_id} />
       </div>
     );
   }
@@ -193,17 +204,20 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
   if (document?.file_id) {
     const sizeStr = formatFileSize(document.file_size);
     return (
-      <a
-        href={buildProxyUrl(document.file_id, projectId, tokenId)}
-        download={document.file_name || 'document'}
-        className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm hover:bg-muted/60 transition-colors max-w-[280px]"
-      >
-        <span className="text-lg">📎</span>
-        <span className="flex-1 truncate text-xs">
-          {document.file_name || 'Документ'}
-          {sizeStr && <span className="text-muted-foreground ml-1">({sizeStr})</span>}
-        </span>
-      </a>
+      <div className="flex items-center gap-1 max-w-[280px]">
+        <a
+          href={buildProxyUrl(document.file_id, projectId, tokenId)}
+          download={document.file_name || 'document'}
+          className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm hover:bg-muted/60 transition-colors flex-1"
+        >
+          <span className="text-lg">📎</span>
+          <span className="flex-1 truncate text-xs">
+            {document.file_name || 'Документ'}
+            {sizeStr && <span className="text-muted-foreground ml-1">({sizeStr})</span>}
+          </span>
+        </a>
+        <CopyFileIdButton fileId={document.file_id} />
+      </div>
     );
   }
 
@@ -214,7 +228,7 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
       return (
         <>
           <div
-            className="max-w-[120px] cursor-zoom-in"
+            className="group relative max-w-[120px] cursor-zoom-in"
             onClick={() => setLightboxSrc(stickerUrl)}
           >
             <video
@@ -225,6 +239,10 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
               playsInline
               className="w-full h-auto pointer-events-none"
             />
+            <CopyFileIdButton
+              fileId={sticker.file_id}
+              className="absolute top-1 right-1"
+            />
           </div>
           {lightboxSrc && (
             <ImageLightbox src={lightboxSrc} mediaType="video" onClose={() => setLightboxSrc(null)} />
@@ -234,13 +252,17 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
     }
     return (
       <>
-        <div className="max-w-[120px]">
+        <div className="group relative max-w-[120px]">
           <img
             src={stickerUrl}
             alt={sticker.emoji || 'Стикер'}
             className="w-full h-auto cursor-zoom-in"
             onClick={() => setLightboxSrc(stickerUrl)}
             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+          />
+          <CopyFileIdButton
+            fileId={sticker.file_id}
+            className="absolute top-1 right-1"
           />
         </div>
         {lightboxSrc && (
@@ -267,6 +289,75 @@ export function MessageMedia({ media, messageData, projectId, tokenId }: Message
         return <span className="text-xs text-muted-foreground italic">{label}</span>;
       }
     }
+  }
+
+  // Медиа из рассылки — URL файла или Telegram file_id сохранён в messageData.broadcastMediaUrl
+  const broadcastMediaUrl = data?.broadcastMediaUrl as string | undefined;
+  const broadcastMediaType = data?.broadcastMediaType as string | undefined;
+
+  if (broadcastMediaUrl) {
+    /**
+     * Определяет src для медиа из рассылки:
+     * - локальный путь /uploads/... → как есть
+     * - http(s):// URL → как есть
+     * - всё остальное (Telegram file_id) → через прокси
+     */
+    const isDirectUrl = broadcastMediaUrl.startsWith('/') || broadcastMediaUrl.startsWith('http');
+    const mediaSrc = isDirectUrl
+      ? broadcastMediaUrl
+      : buildProxyUrl(broadcastMediaUrl, projectId, tokenId);
+
+    if (broadcastMediaType === 'photo' || broadcastMediaType === 'image') {
+      return (
+        <>
+          <div className="rounded-lg overflow-hidden max-w-[200px]">
+            <img
+              src={mediaSrc}
+              alt="Фото рассылки"
+              className="w-full h-auto rounded-lg cursor-zoom-in"
+              onClick={() => setLightboxSrc(mediaSrc)}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          </div>
+          {lightboxSrc && (
+            <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+          )}
+        </>
+      );
+    }
+    if (broadcastMediaType === 'video') {
+      return (
+        <div className="rounded-lg overflow-hidden max-w-[280px]">
+          <video
+            src={mediaSrc}
+            controls
+            className="w-full h-auto rounded-lg"
+            preload="metadata"
+          />
+        </div>
+      );
+    }
+    if (broadcastMediaType === 'audio') {
+      return (
+        <div className="flex items-center gap-1 rounded-lg bg-muted/40 p-2 max-w-[280px]">
+          <audio src={mediaSrc} controls className="w-full" preload="metadata" />
+        </div>
+      );
+    }
+    // document и прочие — иконка со ссылкой
+    return (
+      <a
+        href={mediaSrc}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="flex items-center gap-2 rounded-lg bg-muted/40 px-3 py-2 text-sm hover:bg-muted/60 transition-colors max-w-[280px]"
+      >
+        <span className="text-lg">📎</span>
+        <span className="text-xs truncate">
+          {broadcastMediaType === 'document' ? 'Документ' : 'Файл рассылки'}
+        </span>
+      </a>
+    );
   }
 
   return null;

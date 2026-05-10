@@ -16,8 +16,8 @@ import { useVariableToQuestionMap, useFilteredAndSortedUsers } from './panel/pan
 import { useUserDatabasePanelState } from './panel/panel-state';
 import { UserDatabasePanelProps } from './types';
 import { formatUserName } from './utils';
-import { UserMessagesLiveProvider } from './contexts/user-messages-live-context';
 import { useLiveInvalidate } from './hooks/use-live-invalidate';
+import { useTraffic } from './hooks/queries/use-traffic';
 
 /**
  * Компонент панели базы данных пользователей
@@ -160,7 +160,7 @@ export function UserDatabasePanel(props: UserDatabasePanelProps): React.JSX.Elem
   }
 
   return (
-    <UserMessagesLiveProvider projectId={projectId}>
+    <>
       <LiveInvalidator projectId={projectId} selectedTokenId={resolvedSelectedTokenId} />
       <div ref={containerRef} className="flex h-full w-full flex-col">
         <DatabaseContent
@@ -205,7 +205,7 @@ export function UserDatabasePanel(props: UserDatabasePanelProps): React.JSX.Elem
         isFetchingNextPage={isFetchingNextPage}
         />
       </div>
-    </UserMessagesLiveProvider>
+    </>
   );
 }
 
@@ -221,11 +221,16 @@ interface LiveInvalidatorProps {
 
 /**
  * Вспомогательный компонент, вызывающий useLiveInvalidate внутри UserMessagesLiveProvider.
- * Рендерится без UI — только для подключения хука к контексту провайдера.
+ * Также держит useTraffic смонтированным чтобы инвалидация кэша трафика работала
+ * независимо от того, какой вид статистики выбран (дашборд или классика).
+ * Рендерится без UI — только для подключения хуков к контексту провайдера.
  * @param props - Пропсы компонента
  * @returns null
  */
 function LiveInvalidator({ projectId, selectedTokenId }: LiveInvalidatorProps): null {
   useLiveInvalidate({ projectId, selectedTokenId });
+  // Держим useTraffic смонтированным всегда — иначе при классическом виде
+  // StatsDashboard не рендерится и инвалидация не триггерит fetch
+  useTraffic({ projectId, selectedTokenId });
   return null;
 }

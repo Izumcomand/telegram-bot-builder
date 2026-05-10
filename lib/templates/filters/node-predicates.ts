@@ -261,3 +261,21 @@ export function hasAnswerCallbackQueryNodes(nodes: Node[]): boolean {
 export function hasEditMessageNodes(nodes: Node[]): boolean {
   return nodes.filter(n => n != null).some(node => (node.type as string) === 'edit_message');
 }
+
+/**
+ * Проверяет наличие узлов psql_query в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа psql_query
+ */
+export function hasPsqlQueryNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'psql_query');
+}
+
+/**
+ * Проверяет наличие узлов convert_file в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа convert_file
+ */
+export function hasConvertFileNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'convert_file');
+}

@@ -43,6 +43,9 @@ import { HttpRequestPreview } from './http-request-preview';
 import { GetManagedBotTokenPreview } from './get-managed-bot-token-preview';
 import { AnswerCallbackQueryPreview } from './answer-callback-query-preview';
 import { EditMessagePreview } from './edit-message-preview';
+import { SetVariablePreview } from './set-variable-preview';
+import { PsqlQueryPreview } from './psql-query-preview';
+import { ConvertFilePreview } from './convert-file-preview';
 import { MoveToSheetMenu } from './context-menu/move-to-sheet-menu';
 
 /**
@@ -114,6 +117,8 @@ interface CanvasNodeProps {
    * Передаёт buttonId и позицию центра порта относительно wrapper-div узла.
    */
   onButtonPortMount?: (buttonId: string, offset: { x: number; y: number }) => void;
+  /** ID проекта (для превью Telegram file_id через прокси) */
+  projectId?: number;
 }
 
 /**
@@ -132,7 +137,7 @@ interface CanvasNodeProps {
  * @param {CanvasNodeProps} props - Свойства компонента
  * @returns {JSX.Element} Компонент узла на холсте
  */
-export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDuplicate, onDuplicateAtPosition, onMove, onMoveStart, onMoveEnd, zoom = 100, pan = { x: 0, y: 0 }, setIsNodeBeingDragged, onSizeChange, onPortMouseDown, isConnectionTarget, isConnectionSource, isConnectedToDragging, isHoveredByConnection, forceHover, onHover, onButtonPortMount, sheets, onMoveToSheet }: CanvasNodeProps) {
+export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDuplicate, onDuplicateAtPosition, onMove, onMoveStart, onMoveEnd, zoom = 100, pan = { x: 0, y: 0 }, setIsNodeBeingDragged, onSizeChange, onPortMouseDown, isConnectionTarget, isConnectionSource, isConnectedToDragging, isHoveredByConnection, forceHover, onHover, onButtonPortMount, sheets, onMoveToSheet, projectId }: CanvasNodeProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   // Ref для dragOffset — позволяет читать актуальное значение в handleMouseMove
@@ -537,7 +542,7 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
         <ImageAttachment node={node} />
 
         {/* Media attachments (новый формат - несколько файлов) */}
-        <MediaAttachmentsPreview node={node} />
+        <MediaAttachmentsPreview node={node} projectId={projectId} />
 
         {/* Message preview */}
         <MessagePreview node={node} />
@@ -607,6 +612,15 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
 
         {/* Edit Message Preview */}
         {(node.type as any) === 'edit_message' && <EditMessagePreview node={node} />}
+
+        {/* Set Variable Preview */}
+        {(node.type as any) === 'set_variable' && <SetVariablePreview node={node} />}
+
+        {/* SQL Query Preview */}
+        {(node.type as any) === 'psql_query' && <PsqlQueryPreview node={node} />}
+
+        {/* Convert File Preview */}
+        {(node.type as any) === 'convert_file' && <ConvertFilePreview node={node} />}
 
         {/* Condition Node Preview */}
         {node.type === 'condition' && (

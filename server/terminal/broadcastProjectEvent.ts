@@ -35,19 +35,38 @@ export async function broadcastProjectEvent(projectId: number, event: ProjectEve
   const payload = JSON.stringify(event);
 
   // Рассылаем клиентам конкретного проекта
+  let sentToProject = 0;
   for (const [key, connections] of activeConnections.entries()) {
     if (key.startsWith(prefix)) {
       sendToConnections(connections, payload);
+      sentToProject += connections.size;
     }
   }
 
   // Рассылаем клиентам подписанным на все проекты пользователя
   try {
     const project = await storage.getBotProject(projectId);
-    const userKey = project?.ownerId ? `user_${project.ownerId}` : `user_global`;
-    const userConns = activeConnections.get(userKey);
-    if (userConns) {
-      sendToConnections(userConns, payload);
+    const allKeys = [...activeConnections.keys()];
+
+    // Рассылаем владельцу проекта
+    const ownerKey = project?.ownerId ? `user_${project.ownerId}` : `user_global`;
+    const ownerConns = activeConnections.get(ownerKey);
+    console.log(`[broadcast] event=${event.type} projectId=${projectId} ownerKey=${ownerKey} ownerConns=${ownerConns?.size ?? 0} allKeys=[${allKeys.join(',')}]`);
+    if (ownerConns) {
+      sendToConnections(ownerConns, payload);
+    }
+
+    // Рассылаем всем остальным подключённым пользователям у которых есть доступ к проекту
+    for (const [key, connections] of activeConnections.entries()) {
+      if (!key.startsWith('user_')) continue;
+      if (key === ownerKey) continue; // уже отправили
+      const userIdStr = key.replace('user_', '');
+      const userId = parseInt(userIdStr, 10);
+      if (isNaN(userId)) continue;
+      const hasAccess = await storage.hasProjectAccess(projectId, userId);
+      if (hasAccess) {
+        sendToConnections(connections, payload);
+      }
     }
   } catch (err) {
     console.error(`[broadcastProjectEvent] Ошибка получения проекта ${projectId}:`, err);

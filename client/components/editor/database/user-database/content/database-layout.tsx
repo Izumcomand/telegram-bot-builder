@@ -38,12 +38,17 @@ export function DatabaseContent(props: DatabaseContentProps): React.JSX.Element 
         {!isDatabaseEnabled && <DatabaseDisabled />}
         {isDatabaseEnabled && (
           <div className="flex-1 flex flex-col min-h-0 w-full">
-            <DatabaseStatsSection stats={restProps.stats} />
-            <SaveMediaToggle
+            <DatabaseStatsSection
+              stats={restProps.stats}
+              projectId={restProps.projectId}
+              selectedTokenId={restProps.selectedTokenId}
+              onSourceClick={restProps.onSourceClick}
+            />
+            {/* <SaveMediaToggle
               projectId={restProps.projectId}
               tokenId={restProps.selectedTokenId}
               saveIncomingMedia={saveIncomingMedia ?? null}
-            />
+            /> */}
             <DatabaseFiltersSection {...restProps} />
             <DatabaseTabs 
               {...restProps} 

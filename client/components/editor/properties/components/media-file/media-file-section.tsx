@@ -4,33 +4,48 @@
  * Поддерживает несколько файлов через MultiMediaSelector.
  * Показывает предупреждение при смешивании документов с другими типами медиа.
  * Отображает imageUrl если задан (в том числе переменные вида {var.path}).
+ * Поддерживает добавление Telegram file_id через встроенный блок ввода.
  */
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { MediaFileSectionHeader } from './media-file-section-header';
 import { MultiMediaSelector } from '../../media/multi-media-selector';
 import { InfoBlock } from '@/components/ui/info-block';
 import { VariableSelector } from '../variables/variable-selector';
+import { FileIdInput } from '../../media/file-id-input';
 import { extractVariables } from '../../utils/variables-utils';
 import type { Variable } from '../../../inline-rich/types';
 
+/** Тип медиа для file_id */
+type MediaType = 'photo' | 'video' | 'audio' | 'document';
+
 /** Пропсы секции медиафайлов */
 interface MediaFileSectionProps {
+  /** Идентификатор проекта */
   projectId: number;
+  /** Выбранный узел графа */
   selectedNode: any;
+  /** Открыта ли секция */
   isOpen: boolean;
+  /** Callback переключения открытия/закрытия */
   onToggle: () => void;
+  /** Callback обновления данных узла */
   onNodeUpdate: (nodeId: string, updates: Partial<any>) => void;
+  /** Все узлы всех листов для извлечения переменных */
   getAllNodesFromAllSheets?: any[];
   /** Показывать бейдж "Скоро обновление" (по умолчанию true) */
   showComingSoon?: boolean;
 }
 
 /**
- * Определяет тип медиа по URL или расширению файла
+ * Определяет тип медиа по URL или расширению файла.
+ * JSON-записи Telegram file_id возвращают тип из поля mediaType.
  * @param url - URL или путь к файлу
  */
 function getMediaTypeByUrl(url: string): string {
+  if (url.startsWith('{"__type":"file_id"')) {
+    try { return JSON.parse(url).mediaType || 'photo'; } catch { return 'photo'; }
+  }
   const ext = url.split('.').pop()?.toLowerCase() || '';
   if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext)) return 'image';
   if (['mp4', 'avi', 'mov', 'webm'].includes(ext)) return 'video';
@@ -64,6 +79,11 @@ export function MediaFileSection({
   /** imageUrl — одиночное изображение (может быть переменной вида {var.path}) */
   const imageUrl: string = selectedNode.data.imageUrl || '';
 
+  /** Показывать ли блок ввода Telegram file_id */
+  const [showFileIdInput, setShowFileIdInput] = useState(false);
+  /** Текущий тип медиа для ввода file_id */
+  const [fileIdMediaType, setFileIdMediaType] = useState<MediaType>('photo');
+
   // Проверяем наличие смешанных типов медиа
   const hasDocuments = attachedFiles.some((url) => getMediaTypeByUrl(url) === 'document');
   const hasOtherMedia = attachedFiles.some((url) =>
@@ -85,6 +105,16 @@ export function MediaFileSection({
   const handleVariableSelect = (varName: string) => {
     const current: string[] = selectedNode.data.attachedMedia || [];
     onNodeUpdate(selectedNode.id, { attachedMedia: [...current, `{${varName}}`] });
+  };
+
+  /**
+   * Добавляет file_id-запись в attachedMedia и скрывает блок ввода
+   * @param entry - JSON-строка с данными file_id
+   */
+  const handleFileIdAdd = (entry: string) => {
+    const current: string[] = selectedNode.data.attachedMedia || [];
+    onNodeUpdate(selectedNode.id, { attachedMedia: [...current, entry] });
+    setShowFileIdInput(false);
   };
 
   return (
@@ -121,7 +151,7 @@ export function MediaFileSection({
             </div>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <VariableSelector
               availableVariables={mediaVariables}
               onSelect={handleVariableSelect}
@@ -131,7 +161,26 @@ export function MediaFileSection({
                 </button>
               }
             />
+            {/* Кнопка открытия блока ввода Telegram file_id */}
+            <button
+              onClick={() => setShowFileIdInput((v) => !v)}
+              className="text-xs px-2.5 py-1 rounded-lg border border-violet-300/60 dark:border-violet-700/60 bg-violet-50/60 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 hover:bg-violet-100/80 dark:hover:bg-violet-800/30 transition-colors"
+            >
+              + Telegram file_id
+            </button>
           </div>
+
+          {/* Встроенный блок ввода Telegram file_id */}
+          {showFileIdInput && (
+            <div className="rounded-lg border border-violet-200/60 dark:border-violet-700/60 bg-violet-50/30 dark:bg-violet-900/10 p-3">
+              <FileIdInput
+                projectId={projectId}
+                mediaType={fileIdMediaType}
+                onMediaTypeChange={setFileIdMediaType}
+                onAdd={handleFileIdAdd}
+              />
+            </div>
+          )}
 
           <MultiMediaSelector
             projectId={projectId}

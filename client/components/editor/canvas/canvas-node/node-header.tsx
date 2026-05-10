@@ -116,6 +116,13 @@ export function NodeHeader({ node, onMove }: NodeHeaderProps) {
             Редактировать сообщение
           </span>
         );
+      /** Заголовок узла установки переменных */
+      case 'set_variable' as any:
+        return (
+          <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+            Установить переменные
+          </span>
+        );
       /** Заголовок триггера обновления управляемого бота */
       case 'managed_bot_updated_trigger' as any:
         return (
@@ -127,6 +134,13 @@ export function NodeHeader({ node, onMove }: NodeHeaderProps) {
         return (
           <span className="font-semibold text-cyan-700 dark:text-cyan-300">
             HTTP запрос
+          </span>
+        );
+      /** Заголовок узла прямого SQL-запроса к базе данных */
+      case 'psql_query' as any:
+        return (
+          <span className="font-semibold text-violet-700 dark:text-violet-300">
+            SQL-запрос
           </span>
         );
       default:

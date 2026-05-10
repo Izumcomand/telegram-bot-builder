@@ -4,17 +4,21 @@ import { useTelegramLogin } from '@/components/editor/header/hooks/use-telegram-
 import { useTelegramAuthListener } from '@/components/editor/header/hooks/use-telegram-auth-listener';
 import { useMiniAppAuth } from '@/components/editor/header/hooks/use-mini-app-auth';
 import type { AdaptiveHeaderProps } from './types';
-import { BrandSection } from './components/brand-section';
 import { Navigation } from './components/navigation';
 import { DesktopActionsFull } from './components/desktop-actions-full';
 import { Separator } from './components/separator';
 import { MobileHeaderControls } from './components/mobile-header-controls';
 import { MobileMenu } from './components/mobile-menu';
+import { Logo } from './components/logo';
+import { ProjectSwitcher } from './components/project-switcher';
 
 export function AdaptiveHeader({
   config,
   projectName,
   botInfo,
+  projects,
+  currentProjectId,
+  onProjectChange,
   currentTab,
   onTabChange,
   onSaveAsTemplate,
@@ -54,21 +58,15 @@ export function AdaptiveHeader({
 
   // Классы для контейнера с адаптивной высотой для мобильных устройств
   const containerClasses = [
-    'bg-gradient-to-r from-background via-background/95 to-background/90 dark:from-slate-950 dark:via-slate-950/95 dark:to-slate-900/90 backdrop-blur-sm relative z-50',
-    isVertical ? 'h-full w-full border-r flex flex-col' : `h-12 sm:h-14 md:h-16 lg:h-20 flex items-center justify-between md:flex-wrap md:justify-start md:gap-1.5 lg:gap-2 lg:flex-nowrap lg:justify-between px-2 sm:px-3 md:px-4 lg:px-6`,
+    'bg-background dark:bg-slate-950 border-b border-border/50 relative z-50',
+    isVertical ? 'h-full w-full border-r flex flex-col' : `h-14 flex items-center justify-between gap-2 px-3 lg:px-4`,
     isCompact ? 'text-sm' : ''
   ].join(' ');
 
   if (isVertical) {
     return (
       <header className={containerClasses}>
-        <BrandSection
-          projectName={projectName}
-          botInfo={botInfo}
-          isVertical={isVertical}
-          isCompact={isCompact}
-          isMobile={isMobile}
-        />
+        {/* BrandSection скрыт — перенесён в боковое меню */}
         <Separator />
         <div className="flex-1 overflow-y-auto">
           <Navigation
@@ -108,14 +106,16 @@ export function AdaptiveHeader({
   return (
     <>
       <header className={containerClasses}>
-        <div className="flex items-center gap-1 sm:gap-2 md:gap-1.5 md:order-first flex-shrink-0">
-          <BrandSection
-            projectName={projectName}
-            botInfo={botInfo}
-            isVertical={isVertical}
-            isCompact={isCompact}
-            isMobile={isMobile}
-          />
+        <div className="flex items-center gap-0 md:order-first flex-shrink-0">
+          {/* Переключатель проекта — без лого, лого живёт в сайдбаре */}
+          {projects && projects.length > 0 && currentProjectId && onProjectChange && (
+            <ProjectSwitcher
+              projects={projects}
+              currentProjectId={currentProjectId}
+              onSelect={onProjectChange}
+            />
+          )}
+
           <Separator />
           {/* Мобильные кнопки компонентов и свойств после разделителя */}
           {isMobile && !isVertical && (

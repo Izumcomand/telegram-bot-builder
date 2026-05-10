@@ -58,7 +58,23 @@ export function resolveMediaUrls(data: any): {
     };
   }
 
-  const urlStrings = (rawAttached as string[]).filter(u => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/uploads/')));
+  const urlStrings = (rawAttached as string[]).filter(u => typeof u === 'string' && (u.startsWith('http') || u.startsWith('/uploads/') || u.startsWith('{"__type":"file_id"') || (u.startsWith('{') && u.endsWith('}'))));
+
+  // Переменные вида {varName} — всегда остаются в attachedMediaUrls, не разбираются как URL
+  const hasVariableItems = urlStrings.some(u => u.startsWith('{') && u.endsWith('}') && !u.startsWith('{"__type"'));
+  if (hasVariableItems) {
+    return {
+      imageUrl: '',
+      videoUrl: '',
+      audioUrl: '',
+      documentUrl: '',
+      attachedMediaUrls: urlStrings,
+      isLocalImageUrl: false,
+      isLocalVideoUrl: false,
+      isLocalAudioUrl: false,
+      isLocalDocumentUrl: false,
+    };
+  }
   if (urlStrings.length === 0) {
     return {
       imageUrl,
@@ -73,16 +89,36 @@ export function resolveMediaUrls(data: any): {
     };
   }
 
-  const first = urlStrings[0].toLowerCase();
-  const isPhoto = /\.(jpg|jpeg|png|webp)(\?|#|$)/.test(first);
-  const isVideo = /\.(mp4|mov|avi|mkv|webm|3gp|flv)(\?|#|$)/.test(first);
-  const isAudio = /\.(mp3|ogg|oga|wav|m4a|flac|aac)(\?|#|$)/.test(first);
-  const isDoc = !isPhoto && !isVideo && !isAudio;
+  // Для определения типа медиа используем только обычные URL (не JSON file_id)
+  const regularUrls = urlStrings.filter(u => !u.startsWith('{"__type":"file_id"'));
+  const fileIdUrls = urlStrings.filter(u => u.startsWith('{"__type":"file_id"'));
 
-  const resolvedImageUrl = isPhoto ? urlStrings[0] : '';
-  const resolvedVideoUrl = isVideo ? urlStrings[0] : '';
-  const resolvedAudioUrl = isAudio ? urlStrings[0] : '';
-  const resolvedDocumentUrl = isDoc ? urlStrings[0] : '';
+  // Если есть JSON file_id вместе с обычными URL — оставляем всё в attachedMediaUrls
+  // для генерации медиагруппы в шаблоне (не разбиваем на videoUrl/imageUrl)
+  if (fileIdUrls.length > 0 && regularUrls.length > 0) {
+    return {
+      imageUrl: '',
+      videoUrl: '',
+      audioUrl: '',
+      documentUrl: '',
+      attachedMediaUrls: urlStrings,
+      isLocalImageUrl: false,
+      isLocalVideoUrl: false,
+      isLocalAudioUrl: false,
+      isLocalDocumentUrl: false,
+    };
+  }
+
+  const firstForType = regularUrls.length > 0 ? regularUrls[0].toLowerCase() : '';
+  const isPhoto = firstForType ? /\.(jpg|jpeg|png|webp)(\?|#|$)/.test(firstForType) : false;
+  const isVideo = firstForType ? /\.(mp4|mov|avi|mkv|webm|3gp|flv)(\?|#|$)/.test(firstForType) : false;
+  const isAudio = firstForType ? /\.(mp3|ogg|oga|wav|m4a|flac|aac)(\?|#|$)/.test(firstForType) : false;
+  const isDoc = firstForType ? (!isPhoto && !isVideo && !isAudio) : false;
+
+  const resolvedImageUrl = isPhoto ? regularUrls[0] : '';
+  const resolvedVideoUrl = isVideo ? regularUrls[0] : '';
+  const resolvedAudioUrl = isAudio ? regularUrls[0] : '';
+  const resolvedDocumentUrl = isDoc ? regularUrls[0] : '';
 
   return {
     imageUrl: resolvedImageUrl,

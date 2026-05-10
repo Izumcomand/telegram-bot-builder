@@ -12,8 +12,8 @@ import { CodePanel } from '@/components/editor/code/panel';
 import { ReadmePreview } from '@/components/editor/code/readme';
 import { useCodeGenerator as useCodeGeneratorServer } from '@/components/editor/code/hooks';
 import type { CodeFormat } from '@/components/editor/code/hooks';
-import { AppSidebar } from '@/components/editor/sidebar';
-import { useSidebarState } from '@/components/editor/sidebar/hooks/use-sidebar-state';
+import { AppSidebar } from '@/components/editor/app-sidebar';
+import { useSidebarState } from '@/components/editor/app-sidebar/hooks/use-sidebar-state';
 import { ComponentsSidebar } from '@/components/editor/sidebar/components-sidebar';
 import { PropertiesPanel } from '@/components/editor/properties/components/main/properties-panel';
 import { Canvas } from '@/components/editor/canvas/canvas/canvas';
@@ -49,6 +49,8 @@ import { DialogPanel } from '@/components/editor/database/dialog/dialog-panel';
 import { UserMessagesLiveProvider } from '@/components/editor/database/user-database/contexts/user-messages-live-context';
 import { GroupsPanel } from '@/components/editor/groups/groups-panel';
 import { UserDatabasePanel } from '@/components/editor/database/user-database/user-database-panel';
+import { BroadcastPanel } from '@/components/editor/broadcast';
+import { AnalyticsPanel } from '@/components/editor/analytics';
 import { UserDetailsPanel } from '@/components/editor/database/user-details/user-details-panel';
 import { UserIdsDatabase } from '@/components/editor/user-ids-db';
 import { ProjectNotFound } from '@/components/editor/project-not-found';
@@ -1283,6 +1285,9 @@ export default function Editor() {
       <AdaptiveHeader
         config={layoutConfig}
         projectName={activeProject.name}
+        projects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+        currentProjectId={activeProject.id}
+        onProjectChange={handleProjectSelect}
         currentTab={currentTab}
         onTabChange={handleTabChange}
         onExport={() => { }}
@@ -1440,6 +1445,7 @@ export default function Editor() {
                 onAutoLayout={handleAutoLayout}
                 canvasView={canvasView}
                 onViewChange={currentTab === 'editor' ? handleViewChange : undefined}
+                projectId={activeProject?.id}
               />
             </div>
           )}
@@ -1477,6 +1483,34 @@ export default function Editor() {
             </div>
           )}
           {currentTab === 'user-ids' && <UserIdsDatabase />}
+          {currentTab === 'broadcast' && (
+            <div className="h-full overflow-hidden">
+              <BroadcastPanel
+                projectId={activeProject.id}
+                selectedTokenId={selectedDatabaseTokenId}
+                onSelectToken={setSelectedDatabaseTokenId}
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(projectId) => {
+                  setSelectedDatabaseTokenId(null);
+                  setLocation(`/projects/${projectId}`);
+                }}
+              />
+            </div>
+          )}
+          {currentTab === 'analytics' && (
+            <div className="h-full overflow-hidden">
+              <AnalyticsPanel
+                projectId={activeProject.id}
+                selectedTokenId={selectedDatabaseTokenId}
+                onSelectToken={setSelectedDatabaseTokenId}
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(projectId) => {
+                  setSelectedDatabaseTokenId(null);
+                  setLocation(`/projects/${projectId}`);
+                }}
+              />
+            </div>
+          )}
           {currentTab === 'client-api' && (
             <div className="h-full p-6 bg-background overflow-auto">
               <div className="max-w-3xl mx-auto">
@@ -1556,9 +1590,10 @@ export default function Editor() {
 
     if (useFlexibleLayout) {
       return (
+        <UserMessagesLiveProvider projectId={activeProject.id}>
         <div className="flex h-screen w-full overflow-hidden">
-          {/** Левый сайдбар навигации — временно скрыт */}
-          {/* <AppSidebar
+          {/** Левый сайдбар навигации */}
+          <AppSidebar
             projectName={activeProject.name}
             botInfo={null}
             currentTab={currentTab}
@@ -1569,7 +1604,7 @@ export default function Editor() {
             onToggleCollapsed={toggleCollapsed}
             headerVisible={flexibleLayoutConfig.elements.find(el => el.id === 'header')?.visible ?? false}
             onToggleHeader={handleToggleHeader}
-          /> */}
+          />
           {/** Основная рабочая область */}
           <div className="flex-1 min-w-0 overflow-hidden h-full">
         <SimpleLayoutCustomizer
@@ -1603,16 +1638,14 @@ export default function Editor() {
             }
             dialogContent={
               selectedDialogUser && activeProject && (
-                <UserMessagesLiveProvider projectId={activeProject.id}>
-                  <DialogPanel
-                    key={`dialog-${selectedDialogUser?.userId || 'none'}`}
-                    projectId={activeProject.id}
-                    selectedTokenId={selectedDatabaseTokenId}
-                    user={selectedDialogUser}
-                    onClose={handleCloseDialogPanel}
-                    onSelectUser={handleSelectDialogUser}
-                  />
-                </UserMessagesLiveProvider>
+                <DialogPanel
+                  key={`dialog-${selectedDialogUser?.userId || 'none'}`}
+                  projectId={activeProject.id}
+                  selectedTokenId={selectedDatabaseTokenId}
+                  user={selectedDialogUser}
+                  onClose={handleCloseDialogPanel}
+                  onSelectUser={handleSelectDialogUser}
+                />
               )
             }
             userDetailsContent={
@@ -1635,6 +1668,7 @@ export default function Editor() {
         </SimpleLayoutCustomizer>
           </div>
         </div>
+        </UserMessagesLiveProvider>
       );
     }
 
@@ -1646,12 +1680,16 @@ export default function Editor() {
       {useFlexibleLayout ? (
         renderFlexibleLayoutContent()
       ) : (
+        <UserMessagesLiveProvider projectId={activeProject.id}>
         <AdaptiveLayout
           config={layoutConfig}
           header={
             <AdaptiveHeader
               config={layoutConfig}
               projectName={activeProject.name}
+              projects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+              currentProjectId={activeProject.id}
+              onProjectChange={handleProjectSelect}
               currentTab={currentTab}
               onTabChange={handleTabChange}
               onExport={() => { }}
@@ -1753,6 +1791,7 @@ export default function Editor() {
                   focusNodeId={focusNodeId}
                   highlightNodeId={highlightNodeId}
                   onAutoLayout={handleAutoLayout}
+                  projectId={activeProject?.id}
                 />
               ) : currentTab === 'bot' ? (
                 <div className="h-full p-6 bg-background overflow-auto">
@@ -1787,6 +1826,22 @@ export default function Editor() {
                     projectName={activeProject.name}
                   />
                 </div>
+              ) : currentTab === 'broadcast' ? (
+                <div className="h-full">
+                  <BroadcastPanel
+                    projectId={activeProject.id}
+                    selectedTokenId={selectedDatabaseTokenId}
+                    onSelectToken={setSelectedDatabaseTokenId}
+                  />
+                </div>
+              ) : currentTab === 'analytics' ? (
+                <div className="h-full overflow-hidden">
+                  <AnalyticsPanel
+                    projectId={activeProject.id}
+                    selectedTokenId={selectedDatabaseTokenId}
+                    onSelectToken={setSelectedDatabaseTokenId}
+                  />
+                </div>
               ) : currentTab === 'export' ? null : null}
             </div>
           }
@@ -1812,6 +1867,7 @@ export default function Editor() {
             ) : null
           }
         />
+        </UserMessagesLiveProvider>
       )}
 
       {showLayoutManager && (

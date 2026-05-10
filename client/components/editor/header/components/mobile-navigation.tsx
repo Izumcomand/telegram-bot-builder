@@ -20,15 +20,20 @@ export interface MobileNavigationProps {
   className?: string;
 }
 
-/** Элементы навигации */
-const NAV_ITEMS = [
-  { key: 'editor' as HeaderTab, label: 'Редактор' },
-  { key: 'export' as HeaderTab, label: 'Код' },
-  { key: 'bot' as HeaderTab, label: 'Бот' },
-  { key: 'users' as HeaderTab, label: 'Пользователи' },
-  { key: 'user-ids' as HeaderTab, label: 'База ID' },
-  { key: 'client-api' as HeaderTab, label: 'Client API' },
-] as const;
+/** Элемент навигации */
+interface NavItem {
+  /** Ключ вкладки */
+  key: HeaderTab;
+  /** Отображаемое название */
+  label: string;
+}
+
+/** Элементы навигации в шапке */
+const NAV_ITEMS: NavItem[] = [
+  { key: 'editor', label: 'Редактор' },
+  { key: 'bot', label: 'Бот' },
+  { key: 'users', label: 'Пользователи' },
+];
 
 /**
  * Мобильная навигация по вкладкам (сетка 2 колонки)

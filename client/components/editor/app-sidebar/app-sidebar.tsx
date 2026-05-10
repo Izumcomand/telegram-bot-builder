@@ -32,28 +32,29 @@ export function AppSidebar({
     <aside
       className={cn(
         'h-full flex flex-col z-40',
-        'bg-gradient-to-b from-background via-background/95 to-background/90',
-        'dark:from-slate-950 dark:via-slate-950/95 dark:to-slate-900/90',
+        'bg-background dark:bg-slate-950',
         'border-r border-border/50',
         'transition-all duration-300',
         isCollapsed ? 'w-14' : 'w-56'
       )}
     >
-      {/* Бренд */}
-      <div className="p-3 flex items-center justify-between">
-        <SidebarBrand
-          projectName={projectName}
-          botInfo={botInfo}
-          isCollapsed={isCollapsed}
-        />
-        {/* Кнопка сворачивания */}
+      {/* Бренд + кнопка сворачивания */}
+      <div className={cn(
+        'h-14 px-3 flex items-center flex-shrink-0 border-b border-border/50',
+        isCollapsed ? 'justify-center' : 'justify-between'
+      )}>
+        {!isCollapsed && (
+          <SidebarBrand
+            isCollapsed={isCollapsed}
+          />
+        )}
+        {/* Кнопка сворачивания — всегда видна */}
         {onToggleCollapsed && (
           <button
             onClick={onToggleCollapsed}
             className={cn(
               'flex-shrink-0 h-6 w-6 rounded flex items-center justify-center',
-              'text-muted-foreground hover:bg-muted/60 transition-colors',
-              isCollapsed && 'mx-auto mt-1'
+              'text-muted-foreground hover:bg-muted/60 transition-colors'
             )}
           >
             {isCollapsed
@@ -63,8 +64,6 @@ export function AppSidebar({
           </button>
         )}
       </div>
-
-      <SidebarSeparator />
 
       {/* Основной контент */}
       <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-1">

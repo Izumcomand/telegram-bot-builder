@@ -63,6 +63,9 @@ import { HttpRequestConfiguration } from '../configuration/http-request-configur
 import { GetManagedBotTokenConfiguration } from '../configuration/get-managed-bot-token-configuration';
 import { AnswerCallbackQueryConfiguration } from '../action/AnswerCallbackQueryConfiguration';
 import { EditMessageConfiguration } from '../action/EditMessageConfiguration';
+import { SetVariableConfiguration } from '../configuration/set-variable-configuration';
+import { PsqlQueryConfiguration } from '../configuration/psql-query-configuration';
+import { ConvertFileConfiguration } from '../configuration/ConvertFileConfiguration';
 import type { Variable } from '../../../inline-rich/types';
 
 /**
@@ -369,7 +372,7 @@ export function PropertiesPanel({
         <div className="space-y-0">
 
           {/* Basic Settings Section - СЃРєСЂС‹С‚Рѕ РґР»СЏ СѓР·Р»Р° СЂР°СЃСЃС‹Р»РєР°, client_auth, С‚СЂРёРіРіРµСЂРѕРІ, СѓСЃР»РѕРІРёСЏ Рё РјРµРґРёР°-РЅРѕРґС‹ */}
-          {selectedNode.type !== 'broadcast' && selectedNode.type !== 'client_auth' && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && (
+          {selectedNode.type !== 'broadcast' && selectedNode.type !== 'client_auth' && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (selectedNode.type as any) !== 'psql_query' && (selectedNode.type as any) !== 'convert_file' && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && (
             <BasicSettingsSection
               selectedNode={selectedNode}
               projectId={projectId}
@@ -552,6 +555,43 @@ export function PropertiesPanel({
             />
           )}
 
+          {/* Set Variable Section */}
+          {(selectedNode.type as any) === 'set_variable' && (
+            <SetVariableConfiguration
+              selectedNode={selectedNode}
+              onNodeUpdate={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+              formatNodeDisplay={formatNodeDisplay}
+              textVariables={textVariables as Variable[]}
+            />
+          )}
+
+          {/* SQL Query Section */}
+          {(selectedNode.type as any) === 'psql_query' && (
+            <div className="w-full bg-gradient-to-br from-violet-50/40 to-purple-50/20 dark:from-violet-950/30 dark:to-purple-900/20 rounded-xl p-3 sm:p-4 md:p-5 border border-violet-200/40 dark:border-violet-800/40 backdrop-blur-sm">
+              <PsqlQueryConfiguration
+                selectedNode={selectedNode}
+                onNodeUpdate={onNodeUpdate}
+                getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+                formatNodeDisplay={formatNodeDisplay}
+                textVariables={textVariables as Variable[]}
+              />
+            </div>
+          )}
+
+          {/* Convert File Section */}
+          {(selectedNode.type as any) === 'convert_file' && (
+            <div className="w-full bg-gradient-to-br from-emerald-50/40 to-teal-50/20 dark:from-emerald-950/30 dark:to-teal-900/20 rounded-xl p-3 sm:p-4 md:p-5 border border-emerald-200/40 dark:border-emerald-800/40 backdrop-blur-sm">
+              <ConvertFileConfiguration
+                selectedNode={selectedNode}
+                onNodeUpdate={onNodeUpdate}
+                getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+                formatNodeDisplay={formatNodeDisplay}
+                textVariables={textVariables as Variable[]}
+              />
+            </div>
+          )}
+
           {/* Trigger Section - С‚РѕР»СЊРєРѕ РґР»СЏ СѓР·Р»РѕРІ-С‚СЂРёРіРіРµСЂРѕРІ */}
           {isTriggerNode(selectedNode.type) && selectedNode.type === 'command_trigger' && (
             <CommandTriggerConfiguration
@@ -624,7 +664,7 @@ export function PropertiesPanel({
           )}
 
           {/* Message Content - скрыто для узлов управления, триггеров, условия и медиа-нодов */}
-          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (
+          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (
             <MessageContentSection
               selectedNode={selectedNode}
               allNodes={allNodes}
@@ -642,7 +682,7 @@ export function PropertiesPanel({
             />
           )}
           {/* Media File Section - скрыто для узлов управления, триггеров, условия и медиа-нодов */}
-          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (
+          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (
             <MediaFileSection
               projectId={projectId}
               selectedNode={selectedNode}
@@ -654,7 +694,7 @@ export function PropertiesPanel({
           )}
 
           {/* Keyboard Section - скрыто для узлов управления, триггеров, условия и медиа-нодов */}
-          {selectedNode.type !== 'message' && !isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (
+          {selectedNode.type !== 'message' && !isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (
             <div className="w-full bg-gradient-to-br from-amber-50/40 to-yellow-50/20 dark:from-amber-950/30 dark:to-yellow-900/20 rounded-xl p-3 sm:p-4 md:p-5 border border-amber-200/40 dark:border-amber-800/40 backdrop-blur-sm">
               <KeyboardSectionHeader
                 selectedNode={selectedNode}
@@ -788,7 +828,7 @@ export function PropertiesPanel({
         )}
 
         {/* Universal User Input Collection - скрыто для узлов управления, триггеров, условия и медиа-нодов */}
-          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (
+          {!isManagementNode(selectedNode.type) && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (
             <UserInputSettingsSection
               selectedNode={selectedNode}
               getAllNodesFromAllSheets={getAllNodesFromAllSheets}

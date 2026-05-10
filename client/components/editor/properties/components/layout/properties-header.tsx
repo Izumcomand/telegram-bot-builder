@@ -75,7 +75,13 @@ const nodeTypeNames: Partial<Record<Node['type'], string>> = {
   get_managed_bot_token: 'Получить токен бота',
   answer_callback_query: 'Уведомление inline кнопки',
   edit_message: 'Редактировать сообщение',
-};
+  /** Название узла установки переменных */
+  set_variable: 'Установить переменные',
+  /** Название узла прямого SQL-запроса к базе данных */
+  psql_query: 'SQL-запрос',
+  /** Название узла конвертации файлов */
+  convert_file: 'Конвертер файлов',
+} as Partial<Record<string, string>>;
 
 /**
  * Маппинг иконок типов узлов
@@ -123,7 +129,13 @@ const nodeIcons: Partial<Record<Node['type'], string>> = {
   get_managed_bot_token: 'fas fa-key',
   answer_callback_query: 'fas fa-bell',
   edit_message: 'fas fa-pen',
-};
+  /** Иконка узла установки переменных */
+  set_variable: 'fas fa-pen',
+  /** Иконка узла прямого SQL-запроса к базе данных */
+  psql_query: 'fas fa-database',
+  /** Иконка узла конвертации файлов */
+  convert_file: 'fas fa-file-export',
+} as Partial<Record<string, string>>;
 
 /**
  * Маппинг цветов типов узлов
@@ -172,7 +184,13 @@ const nodeColors: Partial<Record<Node['type'], string>> = {
   answer_callback_query: 'bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400',
   /** Цвет узла редактирования сообщения — синий */
   edit_message: 'bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400',
-};
+  /** Цвет узла установки переменных — изумрудный */
+  set_variable: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+  /** Цвет узла прямого SQL-запроса — фиолетовый */
+  psql_query: 'bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400',
+  /** Цвет узла конвертации файлов — изумрудный */
+  convert_file: 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400',
+} as Partial<Record<string, string>>;
 
 /**
  * Компонент заголовка панели свойств узла
