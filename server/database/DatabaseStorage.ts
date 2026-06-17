@@ -2,10 +2,10 @@
  * @fileoverview Базовая реализация storage поверх Drizzle для серверной части конструктора
  */
 
-import { type BotGroup, botGroups, type BotInstance, botInstances, type BotMessage, type BotMessageMedia, botMessageMedia, botMessages, type BotProject, botProjects, type BotTemplate, botTemplates, type BotToken, botTokens, type BotUser, botUsers, type GroupMember, groupMembers, type MediaFile, mediaFiles, type TelegramUserDB, telegramUsers, type UserBotData, userBotData, botLogs, type BotLog, botLaunchHistory, type BotLaunchHistory, projectCollaborators, type ProjectCollaborator, broadcasts, broadcastResults, type Broadcast, type BroadcastResult, type BroadcastFilters } from "@shared/schema";
+import { type BotGroup, botGroups, type BotInstance, botInstances, type BotMessage, type BotMessageMedia, botMessageMedia, botMessages, type BotProject, botProjects, type BotTemplate, botTemplates, type BotToken, botTokens, type BotUser, botUsers, type GroupMember, groupMembers, type MediaFile, mediaFiles, type TelegramUserDB, telegramUsers, botLogs, type BotLog, botLaunchHistory, type BotLaunchHistory, projectCollaborators, type ProjectCollaborator, broadcasts, broadcastResults, type Broadcast, type BroadcastResult, type BroadcastFilters, botEnvVariables, type BotEnvVariable, botTables, botTableColumns, botTableRows, type BotTable, type BotTableColumn, type BotTableRow, workerProcesses, type WorkerProcess } from "@shared/schema";
 import { and, asc, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from "drizzle-orm";
 import { IStorage } from "../storages/storage";
-import type { StorageBotGroupInput, StorageBotGroupUpdate, StorageBotInstanceInput, StorageBotInstanceUpdate, StorageBotLaunchHistoryInput, StorageBotLaunchHistoryUpdate, StorageBotLogInput, StorageBotMessageInput, StorageBotMessageMediaInput, StorageBotProjectInput, StorageBotProjectUpdate, StorageBotTemplateInput, StorageBotTemplateUpdate, StorageBotTokenInput, StorageBotTokenUpdate, StorageGroupMemberInput, StorageGroupMemberUpdate, StorageMediaFileInput, StorageMediaFileUpdate, StorageTelegramUserInput, StorageUserBotDataInput, StorageUserBotDataUpdate, StorageBroadcastInput, StorageBroadcastUpdate, StorageBroadcastResultInput } from "../storages/storageTypes";
+import type { StorageBotGroupInput, StorageBotGroupUpdate, StorageBotInstanceInput, StorageBotInstanceUpdate, StorageBotLaunchHistoryInput, StorageBotLaunchHistoryUpdate, StorageBotLogInput, StorageBotMessageInput, StorageBotMessageMediaInput, StorageBotProjectInput, StorageBotProjectUpdate, StorageBotTemplateInput, StorageBotTemplateUpdate, StorageBotTokenInput, StorageBotTokenUpdate, StorageGroupMemberInput, StorageGroupMemberUpdate, StorageMediaFileInput, StorageMediaFileUpdate, StorageTelegramUserInput, StorageBroadcastInput, StorageBroadcastUpdate, StorageBroadcastResultInput, StorageBotEnvVariableInput, StorageBotEnvVariableUpdate, StorageBotTableInput, StorageBotTableColumnInput, StorageBotTableRowInput, StorageWorkerProcessInput } from "../storages/storageTypes";
 import { db } from "./db";
 
 /**
@@ -827,283 +827,6 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(mediaFiles.usageCount), desc(mediaFiles.createdAt));
   }
 
-  // User Bot Data
-  /**
-   * Получить данные пользователя бота по ID из базы данных
-   * @param id - ID данных пользователя
-   * @returns Данные пользователя бота или undefined, если не найдены
-   */
-  async getUserBotData(id: number): Promise<UserBotData | undefined> {
-    const [userData] = await this.db.select().from(userBotData).where(eq(userBotData.id, id));
-    return userData || undefined;
-  }
-
-  /**
-   * Получить данные пользователя бота по ID проекта и ID пользователя из базы данных
-   * @param projectId - ID проекта
-   * @param userId - ID пользователя
-   * @returns Данные пользователя бота или undefined, если не найдены
-   */
-  async getUserBotDataByProjectAndUser(
-    projectId: number,
-    userId: string,
-    tokenId?: number | null
-  ): Promise<UserBotData | undefined> {
-    const conditions = [
-      eq(userBotData.projectId, projectId),
-      eq(userBotData.userId, userId),
-    ];
-
-    if (tokenId !== null && tokenId !== undefined) {
-      conditions.push(eq(userBotData.tokenId, tokenId));
-    }
-
-    const [userData] = await this.db.select().from(userBotData)
-      .where(and(...conditions));
-    return userData || undefined;
-  }
-
-  /**
-   * Получить все данные пользователей бота по ID проекта из базы данных
-   * @param projectId - ID проекта
-   * @returns Массив данных пользователей бота
-   */
-  async getUserBotDataByProject(projectId: number, tokenId?: number | null): Promise<UserBotData[]> {
-    const conditions = [eq(userBotData.projectId, projectId)];
-
-    if (tokenId !== null && tokenId !== undefined) {
-      conditions.push(eq(userBotData.tokenId, tokenId));
-    }
-
-    return await this.db.select().from(userBotData)
-      .where(and(...conditions))
-      .orderBy(desc(userBotData.lastInteraction));
-  }
-
-  /**
-   * Получить все данные пользователей ботов из базы данных
-   * @returns Массив всех данных пользователей ботов
-   */
-  async getAllUserBotData(): Promise<UserBotData[]> {
-    return await this.db.select().from(userBotData).orderBy(desc(userBotData.lastInteraction));
-  }
-
-  /**
-   * Создать новые данные пользователя бота в базе данных
-   * @param insertUserData - Данные для создания
-   * @returns Созданные данные пользователя бота
-   */
-  async createUserBotData(insertUserData: StorageUserBotDataInput): Promise<UserBotData> {
-    const [userData] = await this.db
-      .insert(userBotData)
-      .values(insertUserData)
-      .returning();
-    return userData;
-  }
-
-  /**
-   * Обновить данные пользователя бота в базе данных
-   * @param id - ID данных
-   * @param updateData - Данные для обновления
-   * @returns Обновленные данные пользователя бота или undefined, если не найдены
-   */
-  async updateUserBotData(id: number, updateData: StorageUserBotDataUpdate): Promise<UserBotData | undefined> {
-    const [userData] = await this.db
-      .update(userBotData)
-      .set({ ...updateData, updatedAt: new Date() })
-      .where(eq(userBotData.id, id))
-      .returning();
-    return userData || undefined;
-  }
-
-  /**
-   * Удалить данные пользователя бота из базы данных
-   * @param id - ID данных
-   * @returns true, если данные были удалены, иначе false
-   */
-  async deleteUserBotData(id: number): Promise<boolean> {
-    const result = await this.db.delete(userBotData).where(eq(userBotData.id, id));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  /**
-   * Удалить все данные пользователей бота по ID проекта из базы данных
-   * @param projectId - ID проекта
-   * @returns true, если данные были удалены, иначе false
-   */
-  async deleteUserBotDataByProject(projectId: number, tokenId?: number | null): Promise<boolean> {
-    const conditions = [eq(userBotData.projectId, projectId)];
-
-    if (tokenId !== null && tokenId !== undefined) {
-      conditions.push(eq(userBotData.tokenId, tokenId));
-    }
-
-    const result = await this.db.delete(userBotData).where(and(...conditions));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  /**
-   * Увеличить счетчик взаимодействий пользователя в базе данных
-   * @param id - ID данных пользователя
-   * @returns true, если счетчик был увеличен, иначе false
-   */
-  async incrementUserInteraction(id: number): Promise<boolean> {
-    const [userData] = await this.db.select().from(userBotData).where(eq(userBotData.id, id));
-    if (!userData) return false;
-
-    const result = await this.db
-      .update(userBotData)
-      .set({
-        interactionCount: (userData.interactionCount || 0) + 1,
-        lastInteraction: new Date(),
-        updatedAt: new Date()
-      })
-      .where(eq(userBotData.id, id));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  /**
-   * Увеличить счетчик взаимодействий пользователя бота (bot_users)
-   * @param userId - ID пользователя в Telegram
-   * @param projectId - ID проекта
-   * @param tokenId - ID токена бота
-   * @returns true, если счетчик был увеличен, иначе false
-   */
-  async incrementBotUserInteraction(
-    userId: number,
-    projectId: number,
-    tokenId: number
-  ): Promise<boolean> {
-    const conditions = [
-      eq(botUsers.userId, userId),
-      eq(botUsers.projectId, projectId),
-      eq(botUsers.tokenId, tokenId),
-    ];
-
-    const [user] = await this.db.select().from(botUsers).where(and(...conditions));
-    if (!user) return false;
-
-    const result = await this.db
-      .update(botUsers)
-      .set({
-        interactionCount: (user.interactionCount || 0) + 1,
-        lastInteraction: new Date(),
-      })
-      .where(and(...conditions));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  /**
-   * Обновить состояние пользователя в базе данных
-   * @param id - ID данных пользователя
-   * @param state - Новое состояние
-   * @returns true, если состояние было обновлено, иначе false
-   */
-  async updateUserState(id: number, state: string): Promise<boolean> {
-    const result = await this.db
-      .update(userBotData)
-      .set({
-        currentState: state,
-        updatedAt: new Date()
-      })
-      .where(eq(userBotData.id, id));
-    return result.rowCount ? result.rowCount > 0 : false;
-  }
-
-  /**
-   * Поиск данных пользователей бота по проекту и запросу в базе данных
-   * @param projectId - ID проекта
-   * @param query - Поисковый запрос
-   * @returns Массив найденных данных пользователей
-   */
-  async searchUserBotData(projectId: number, query: string, tokenId?: number | null): Promise<UserBotData[]> {
-    const searchTerm = `%${query.toLowerCase()}%`;
-    const conditions = [
-      eq(userBotData.projectId, projectId),
-      or(
-        ilike(userBotData.userName, searchTerm),
-        ilike(userBotData.firstName, searchTerm),
-        ilike(userBotData.lastName, searchTerm),
-        ilike(userBotData.notes, searchTerm)
-      ),
-    ];
-
-    if (tokenId !== null && tokenId !== undefined) {
-      conditions.push(eq(userBotData.tokenId, tokenId));
-    }
-
-    return await this.db.select().from(userBotData)
-      .where(and(...conditions))
-      .orderBy(desc(userBotData.lastInteraction));
-  }
-
-  /**
-   * Поиск пользователей ботов по запросу в базе данных
-   * @param query - Поисковый запрос
-   * @returns Массив найденных пользователей ботов
-   */
-  async searchBotUsers(query: string, projectId?: number): Promise<BotUser[]> {
-    // Убираем @ символ если есть
-    const cleanQuery = query.startsWith('@') ? query.slice(1) : query;
-    const searchTerm = `%${cleanQuery.toLowerCase()}%`;
-    const numericQuery = parseInt(cleanQuery);
-
-    const conditions = [
-      or(
-        ilike(botUsers.username, searchTerm),
-        ilike(botUsers.firstName, searchTerm),
-        ilike(botUsers.lastName, searchTerm),
-        isNaN(numericQuery) ? sql`false` : eq(botUsers.userId, numericQuery)
-      )
-    ];
-
-    if (projectId !== undefined) {
-      conditions.push(eq(botUsers.projectId, projectId));
-    }
-
-    return await this.db.select().from(botUsers)
-      .where(and(...conditions))
-      .orderBy(desc(botUsers.lastInteraction));
-  }
-
-  /**
-   * Получить статистику по данным пользователей бота из базы данных
-   * @param projectId - ID проекта
-   * @returns Объект со статистикой пользователей
-   */
-  async getUserBotDataStats(projectId: number, tokenId?: number | null): Promise<{
-    totalUsers: number;
-    activeUsers: number;
-    blockedUsers: number;
-    premiumUsers: number;
-    totalInteractions: number;
-    avgInteractionsPerUser: number;
-  }> {
-    const conditions = [eq(userBotData.projectId, projectId)];
-
-    if (tokenId !== null && tokenId !== undefined) {
-      conditions.push(eq(userBotData.tokenId, tokenId));
-    }
-
-    const users = await this.db.select().from(userBotData).where(and(...conditions));
-
-    const totalUsers = users.length;
-    const activeUsers = users.filter(u => u.isActive === 1).length;
-    const blockedUsers = users.filter(u => u.isBlocked === 1).length;
-    const premiumUsers = users.filter(u => u.isPremium === 1).length;
-    const totalInteractions = users.reduce((sum, u) => sum + (u.interactionCount || 0), 0);
-    const avgInteractionsPerUser = totalUsers > 0 ? totalInteractions / totalUsers : 0;
-
-    return {
-      totalUsers,
-      activeUsers,
-      blockedUsers,
-      premiumUsers,
-      totalInteractions,
-      avgInteractionsPerUser
-    };
-  }
-
   // Bot Groups
   /**
    * Получить группу бота по ID из базы данных
@@ -1399,6 +1122,8 @@ export class DatabaseStorage implements IStorage {
     const whereConditions = [
       eq(botMessages.projectId, projectId),
       eq(botMessages.userId, userId),
+      // Личный диалог — только сообщения из приватного чата, без групповых
+      eq(botMessages.chatType, 'private'),
     ];
 
     if (tokenId !== null && tokenId !== undefined) {
@@ -1414,6 +1139,49 @@ export class DatabaseStorage implements IStorage {
       .from(botMessages)
       .where(and(...whereConditions))
       .orderBy(order === 'desc' ? desc(botMessages.createdAt) : asc(botMessages.createdAt))
+      .limit(limit);
+
+    const messagesWithMedia = await Promise.all(
+      messages.map(async (message) => {
+        const media = await this.getMessageMedia(message.id);
+        return {
+          ...message,
+          media: media.length > 0 ? media : undefined,
+        };
+      })
+    );
+
+    return messagesWithMedia;
+  }
+
+  /**
+   * Получить сообщения группового чата по project_id и chat_id
+   * @param projectId - ID проекта
+   * @param chatId - Telegram chat_id группы
+   * @param limit - Ограничение количества сообщений (по умолчанию 100)
+   * @param tokenId - Опциональный ID токена для фильтрации
+   * @returns Массив сообщений с медиа, отсортированных по убыванию даты
+   */
+  async getGroupChatMessages(
+    projectId: number,
+    chatId: string,
+    limit: number = 100,
+    tokenId?: number | null
+  ): Promise<(BotMessage & { media?: Array<MediaFile & { mediaKind: string; orderIndex: number }> })[]> {
+    const whereConditions = [
+      eq(botMessages.projectId, projectId),
+      eq(botMessages.chatId, chatId),
+    ];
+
+    if (tokenId !== null && tokenId !== undefined) {
+      whereConditions.push(eq(botMessages.tokenId, tokenId));
+    }
+
+    const messages = await this.db
+      .select()
+      .from(botMessages)
+      .where(and(...whereConditions))
+      .orderBy(desc(botMessages.createdAt))
       .limit(limit);
 
     const messagesWithMedia = await Promise.all(
@@ -1459,6 +1227,57 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(botLogs)
       .where(and(eq(botLogs.projectId, projectId), eq(botLogs.tokenId, tokenId)))
+      .orderBy(desc(botLogs.timestamp))
+      .limit(limit);
+    return rows.reverse();
+  }
+
+  /**
+   * Получить логи только последнего запуска бота
+   * @param projectId - Идентификатор проекта
+   * @param tokenId - Идентификатор токена
+   * @param limit - Максимальное количество строк
+   * @returns Массив записей логов последнего запуска
+   */
+  async getLatestLaunchLogs(projectId: number, tokenId: number, limit = 500): Promise<BotLog[]> {
+    // Находим последний launchId для этого токена
+    const lastLaunch = await this.db
+      .select({ launchId: botLogs.launchId })
+      .from(botLogs)
+      .where(and(
+        eq(botLogs.projectId, projectId),
+        eq(botLogs.tokenId, tokenId),
+        sql`${botLogs.launchId} IS NOT NULL`
+      ))
+      .orderBy(desc(botLogs.timestamp))
+      .limit(1);
+
+    const launchId = lastLaunch[0]?.launchId;
+
+    // Если нет запусков — возвращаем логи без launch_id (live-логи)
+    if (!launchId) {
+      const rows = await this.db
+        .select()
+        .from(botLogs)
+        .where(and(
+          eq(botLogs.projectId, projectId),
+          eq(botLogs.tokenId, tokenId),
+          sql`${botLogs.launchId} IS NULL`
+        ))
+        .orderBy(desc(botLogs.timestamp))
+        .limit(limit);
+      return rows.reverse();
+    }
+
+    // Возвращаем логи последнего запуска
+    const rows = await this.db
+      .select()
+      .from(botLogs)
+      .where(and(
+        eq(botLogs.projectId, projectId),
+        eq(botLogs.tokenId, tokenId),
+        eq(botLogs.launchId, launchId)
+      ))
       .orderBy(desc(botLogs.timestamp))
       .limit(limit);
     return rows.reverse();
@@ -1762,13 +1581,22 @@ export class DatabaseStorage implements IStorage {
    * @param filters - Фильтры аудитории (теги, даты регистрации, активности)
    * @returns Массив пользователей, подходящих под фильтры
    */
-  async getUsersForBroadcast(projectId: number, tokenId: number, filters: BroadcastFilters): Promise<UserBotData[]> {
+  async getUsersForBroadcast(projectId: number, tokenId: number, filters: BroadcastFilters): Promise<any[]> {
     // Используем таблицу bot_users — там хранятся реальные пользователи бота
     const conditions = [
       eq(botUsers.projectId, projectId),
       eq(botUsers.tokenId, tokenId),
       eq(botUsers.isBot, 0),
     ];
+
+    // Фильтрация по конкретным userId (ручной выбор аудитории)
+    if (filters.userIds) {
+      // Пустой список при ручном выборе — никого не рассылаем (иначе уйдёт всем)
+      if (filters.userIds.length === 0) {
+        return [];
+      }
+      conditions.push(sql`${botUsers.userId}::text IN (${sql.join(filters.userIds.map(id => sql`${id}`), sql`, `)})`);
+    }
 
     if (filters.registeredFrom) {
       conditions.push(sql`${botUsers.registeredAt} >= ${new Date(filters.registeredFrom)}`);
@@ -1795,7 +1623,7 @@ export class DatabaseStorage implements IStorage {
       });
     }
 
-    // Приводим BotUser к UserBotData для совместимости с очередью отправки
+    // Приводим BotUser к формату совместимому с очередью отправки
     return filtered.map(u => ({
       id: 0,
       projectId: u.projectId,
@@ -1825,6 +1653,268 @@ export class DatabaseStorage implements IStorage {
       notes: null,
       createdAt: u.registeredAt ?? null,
       updatedAt: u.lastInteraction ?? null,
-    })) as unknown as UserBotData[];
+    })) as unknown as any[];
+  }
+
+  // Переменные окружения бота
+
+  /**
+   * Получить все переменные окружения для токена
+   * @param tokenId - ID токена
+   * @returns Массив переменных окружения
+   */
+  async getEnvVariables(tokenId: number): Promise<BotEnvVariable[]> {
+    return await this.db.select().from(botEnvVariables)
+      .where(eq(botEnvVariables.tokenId, tokenId))
+      .orderBy(asc(botEnvVariables.key));
+  }
+
+  /**
+   * Получить переменную окружения по ID
+   * @param id - ID переменной
+   * @returns Переменная окружения или undefined
+   */
+  async getEnvVariable(id: number): Promise<BotEnvVariable | undefined> {
+    const [variable] = await this.db.select().from(botEnvVariables)
+      .where(eq(botEnvVariables.id, id));
+    return variable || undefined;
+  }
+
+  /**
+   * Создать новую переменную окружения
+   * @param data - Данные для создания
+   * @returns Созданная переменная
+   */
+  async createEnvVariable(data: StorageBotEnvVariableInput): Promise<BotEnvVariable> {
+    const [variable] = await this.db.insert(botEnvVariables)
+      .values(data)
+      .returning();
+    return variable;
+  }
+
+  /**
+   * Обновить переменную окружения
+   * @param id - ID переменной
+   * @param data - Данные для обновления
+   * @returns Обновлённая переменная или undefined
+   */
+  async updateEnvVariable(id: number, data: StorageBotEnvVariableUpdate): Promise<BotEnvVariable | undefined> {
+    const [variable] = await this.db.update(botEnvVariables)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(botEnvVariables.id, id))
+      .returning();
+    return variable || undefined;
+  }
+
+  /**
+   * Удалить переменную окружения
+   * @param id - ID переменной
+   * @returns true, если переменная была удалена
+   */
+  async deleteEnvVariable(id: number): Promise<boolean> {
+    const result = await this.db.delete(botEnvVariables)
+      .where(eq(botEnvVariables.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  /**
+   * Удалить все переменные окружения токена
+   * @param tokenId - ID токена
+   * @returns true, если переменные были удалены
+   */
+  async deleteEnvVariablesByToken(tokenId: number): Promise<boolean> {
+    const result = await this.db.delete(botEnvVariables)
+      .where(eq(botEnvVariables.tokenId, tokenId));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  // Bot Tables
+
+  /**
+   * Получить все таблицы проекта
+   * @param projectId - ID проекта
+   * @returns Массив таблиц
+   */
+  async getBotTables(projectId: number): Promise<BotTable[]> {
+    return await this.db.select().from(botTables)
+      .where(eq(botTables.projectId, projectId))
+      .orderBy(asc(botTables.id));
+  }
+
+  /**
+   * Создать новую таблицу проекта
+   * @param input - Данные для создания
+   * @returns Созданная таблица
+   */
+  async createBotTable(input: StorageBotTableInput): Promise<BotTable> {
+    const [table] = await this.db.insert(botTables).values(input).returning();
+    return table;
+  }
+
+  /**
+   * Удалить таблицу проекта
+   * @param id - ID таблицы
+   * @returns true, если таблица была удалена
+   */
+  async deleteBotTable(id: number): Promise<boolean> {
+    const result = await this.db.delete(botTables).where(eq(botTables.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  /**
+   * Переименовать таблицу проекта
+   * @param id - ID таблицы
+   * @param name - Новое название
+   * @returns Обновлённая таблица или undefined
+   */
+  async renameBotTable(id: number, name: string): Promise<BotTable | undefined> {
+    const [table] = await this.db.update(botTables)
+      .set({ name })
+      .where(eq(botTables.id, id))
+      .returning();
+    return table || undefined;
+  }
+
+  /**
+   * Получить колонки таблицы
+   * @param tableId - ID таблицы
+   * @returns Массив колонок
+   */
+  async getBotTableColumns(tableId: number): Promise<BotTableColumn[]> {
+    return await this.db.select().from(botTableColumns)
+      .where(eq(botTableColumns.tableId, tableId))
+      .orderBy(asc(botTableColumns.position));
+  }
+
+  /**
+   * Создать колонку таблицы
+   * @param input - Данные для создания
+   * @returns Созданная колонка
+   */
+  async createBotTableColumn(input: StorageBotTableColumnInput): Promise<BotTableColumn> {
+    const [column] = await this.db.insert(botTableColumns).values(input).returning();
+    return column;
+  }
+
+  /**
+   * Удалить колонку таблицы
+   * @param id - ID колонки
+   * @returns true, если колонка была удалена
+   */
+  async deleteBotTableColumn(id: number): Promise<boolean> {
+    const result = await this.db.delete(botTableColumns).where(eq(botTableColumns.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  /**
+   * Переименовать колонку таблицы
+   * @param id - ID колонки
+   * @param name - Новое название
+   * @returns Обновлённая колонка или undefined
+   */
+  async renameBotTableColumn(id: number, name: string): Promise<BotTableColumn | undefined> {
+    const [column] = await this.db.update(botTableColumns)
+      .set({ name })
+      .where(eq(botTableColumns.id, id))
+      .returning();
+    return column || undefined;
+  }
+
+  /**
+   * Получить строки таблицы
+   * @param tableId - ID таблицы
+   * @returns Массив строк
+   */
+  async getBotTableRows(tableId: number): Promise<BotTableRow[]> {
+    return await this.db.select().from(botTableRows)
+      .where(eq(botTableRows.tableId, tableId))
+      .orderBy(asc(botTableRows.rowIndex));
+  }
+
+  /**
+   * Создать строки таблицы (батч)
+   * @param inputs - Массив данных для создания
+   * @returns Массив созданных строк
+   */
+  async createBotTableRows(inputs: StorageBotTableRowInput[]): Promise<BotTableRow[]> {
+    if (!inputs.length) return [];
+    return await this.db.insert(botTableRows).values(inputs).returning();
+  }
+
+  /**
+   * Обновить данные строки таблицы
+   * @param id - ID строки
+   * @param data - Новые данные строки
+   * @returns Обновлённая строка или undefined
+   */
+  async updateBotTableRow(id: number, data: Record<string, string>): Promise<BotTableRow | undefined> {
+    const [row] = await this.db.update(botTableRows)
+      .set({ data })
+      .where(eq(botTableRows.id, id))
+      .returning();
+    return row || undefined;
+  }
+
+  /**
+   * Удалить строку таблицы
+   * @param id - ID строки
+   * @returns true, если строка была удалена
+   */
+  async deleteBotTableRow(id: number): Promise<boolean> {
+    const result = await this.db.delete(botTableRows).where(eq(botTableRows.id, id));
+    return result.rowCount ? result.rowCount > 0 : false;
+  }
+
+  /**
+   * Переиндексировать строки таблицы (row_index = 0, 1, 2, ...)
+   * @param tableId - ID таблицы
+   */
+  async reindexBotTableRows(tableId: number): Promise<void> {
+    const rows = await this.db.select().from(botTableRows)
+      .where(eq(botTableRows.tableId, tableId))
+      .orderBy(asc(botTableRows.rowIndex));
+    await Promise.all(
+      rows.map((row, index) =>
+        this.db.update(botTableRows).set({ rowIndex: index }).where(eq(botTableRows.id, row.id))
+      )
+    );
+  }
+
+  // Worker Processes
+
+  /**
+   * Создать запись о процессе воркера
+   * @param data - Данные для создания записи
+   * @returns Созданная запись процесса воркера
+   */
+  async createWorkerProcess(data: StorageWorkerProcessInput): Promise<WorkerProcess> {
+    const [record] = await this.db.insert(workerProcesses).values(data).returning();
+    return record;
+  }
+
+  /**
+   * Остановить воркер проекта — установить status = 'stopped', stopped_at = NOW()
+   * @param projectId - ID проекта
+   * @returns true, если запись была обновлена
+   */
+  async stopWorkerProcess(projectId: number): Promise<boolean> {
+    const result = await this.db.update(workerProcesses)
+      .set({ status: "stopped", stoppedAt: new Date() })
+      .where(and(
+        eq(workerProcesses.projectId, projectId),
+        eq(workerProcesses.status, "running")
+      ))
+      .returning();
+    return result.length > 0;
+  }
+
+  /**
+   * Получить все активные воркеры (status = 'running')
+   * @returns Массив активных записей воркеров
+   */
+  async getActiveWorkers(): Promise<WorkerProcess[]> {
+    return await this.db.select().from(workerProcesses)
+      .where(eq(workerProcesses.status, "running"))
+      .orderBy(desc(workerProcesses.startedAt));
   }
 }

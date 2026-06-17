@@ -10,8 +10,12 @@ export type HeaderTab =
   | 'export'
   | 'bot'
   | 'users'
+  | 'dialogs'
   | 'groups'
   | 'user-ids'
   | 'client-api'
   | 'broadcast'
-  | 'analytics';
+  | 'analytics'
+  | 'tables'
+  | 'files'
+  | 'terminal';

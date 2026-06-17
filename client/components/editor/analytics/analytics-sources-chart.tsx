@@ -102,7 +102,7 @@ export function AnalyticsSourcesChart({ projectId, selectedTokenId }: AnalyticsS
   }, [liveContext, projectId, selectedTokenId, queryClient]);
 
   const { points, isLoading } = useGrowthBySource({ projectId, selectedTokenId, granularity });
-  const multiLineData = aggregateTopSources(points, 6);
+  const multiLineData = aggregateTopSources(points, 10);
 
   /** Суммарное число пользователей за период по всем источникам */
   const totalForPeriod = multiLineData.reduce((sum, line) => sum + line.data.reduce((s, p) => s + p.count, 0), 0);
@@ -143,16 +143,16 @@ export function AnalyticsSourcesChart({ projectId, selectedTokenId }: AnalyticsS
   return (
     <div className="bg-background border rounded-xl p-3 flex flex-col gap-3">
       {/* Заголовок + переключатель типа + переключатель периодов */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Источники трафика</span>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="text-sm font-medium truncate">Источники трафика</span>
           {totalForPeriod > 0 && (
-            <span className="text-xs text-muted-foreground">+{totalForPeriod} за период</span>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">+{totalForPeriod} за период</span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <ChartTypeToggle value={chartType} onChange={setChartType} />
-          <div className="flex items-center gap-0.5">
+          <div className="flex items-center gap-0.5 flex-wrap">
             {PERIOD_ORDER.map((g) => (
               <button key={g} type="button" onClick={() => setGranularity(g)}
                 className={['text-xs px-1.5 py-0.5 rounded transition-colors',
@@ -208,7 +208,7 @@ export function AnalyticsSourcesChart({ projectId, selectedTokenId }: AnalyticsS
         </ResponsiveContainer>
       ) : (
         <ResponsiveContainer width="100%" height={160}>
-          <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+          <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }} barCategoryGap="8%">
             <YAxis hide domain={[0, 'auto']} />
             <XAxis dataKey="date" ticks={tickValues}
               tickFormatter={(val: string) => fmtTick(val, granularity)}
@@ -221,7 +221,7 @@ export function AnalyticsSourcesChart({ projectId, selectedTokenId }: AnalyticsS
               cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
             {visibleData.map((line, idx) => (
               <Bar key={line.name} dataKey={line.name} stackId="sources" fill={line.color}
-                fillOpacity={0.85} isAnimationActive={false} maxBarSize={20}
+                fillOpacity={0.85} isAnimationActive={false}
                 radius={idx === visibleData.length - 1 ? [2, 2, 0, 0] : [0, 0, 0, 0]} />
             ))}
           </BarChart>

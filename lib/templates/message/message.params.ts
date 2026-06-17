@@ -24,6 +24,8 @@ export interface MessageTemplateParams {
   messageText?: string;
   /** Режим форматирования */
   formatMode?: FormatMode;
+  /** Отключить превью ссылок */
+  disableLinkPreview?: boolean;
 
   // --- Доступ ---
   /** Только администраторы */
@@ -48,6 +50,8 @@ export interface MessageTemplateParams {
   oneTimeKeyboard?: boolean;
   /** Изменить размер клавиатуры под кнопки */
   resizeKeyboard?: boolean;
+  /** Перемешивать порядок inline-кнопок при каждом показе */
+  shuffleButtons?: boolean;
 
   // --- Множественный выбор ---
   /** Разрешить множественный выбор */
@@ -160,6 +164,9 @@ export interface MessageTemplateParams {
    * используется он. Иначе — nodeId (обратная совместимость).
    */
   callbackPattern?: string;
+
+  /** ID проекта для поддержки get_content (горячая перезагрузка контента) */
+  projectId?: number | null;
 
   /** Имя переменной для сохранения ID отправленного сообщения */
   saveMessageIdTo?: string;

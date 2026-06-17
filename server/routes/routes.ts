@@ -2,7 +2,7 @@
  * @fileoverview Основной роутер HTTP API для проектов, токенов, интеграций и базы пользователей
  */
 
-import { insertBotTemplateSchema, insertBotTokenSchema, insertUserBotDataSchema } from "@shared/schema";
+import { insertBotTemplateSchema, insertBotTokenSchema } from "@shared/schema";
 import { ChildProcess } from "child_process";
 import PostgresStore from "connect-pg-simple";
 import type { Express, RequestHandler } from "express";
@@ -1260,6 +1260,174 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   });
 
   /**
+   * Обновление настроек Telethon userbot для токена бота
+   * PUT /api/projects/:projectId/tokens/:tokenId/userbot
+   */
+  app.put("/api/projects/:projectId/tokens/:tokenId/userbot", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const projectId = parseInt(req.params.projectId);
+      const { userbotEnabled, userbotApiId, userbotApiHash, userbotSessionString } = req.body as {
+        userbotEnabled: number;
+        userbotApiId: string | null;
+        userbotApiHash: string | null;
+        userbotSessionString: string | null;
+      };
+
+      if (userbotEnabled !== 0 && userbotEnabled !== 1) {
+        return res.status(400).json({ message: "userbotEnabled должен быть 0 или 1" });
+      }
+
+      const updated = await storage.updateBotToken(tokenId, {
+        userbotEnabled,
+        userbotApiId,
+        userbotApiHash,
+        userbotSessionString,
+      });
+      if (!updated) {
+        return res.status(404).json({ message: "Токен не найден" });
+      }
+
+      try {
+        const { existsSync, readFileSync, writeFileSync, readdirSync } = await import('fs');
+        const { join } = await import('path');
+        const botsDir = join(process.cwd(), 'bots');
+
+        if (existsSync(botsDir)) {
+          const dirs = readdirSync(botsDir, { withFileTypes: true });
+
+          for (const dir of dirs) {
+            if (!dir.isDirectory()) continue;
+
+            const envPath = join(botsDir, dir.name, '.env');
+            if (!existsSync(envPath)) continue;
+
+            const content = readFileSync(envPath, 'utf8');
+            if (!content.includes(`PROJECT_ID=${projectId}`)) continue;
+
+            let updatedContent = content;
+
+            const envLines: Array<{ key: string; value: string; comment: string }> = [
+              { key: 'USERBOT_ENABLED', value: userbotEnabled === 1 ? 'true' : 'false', comment: '# Telethon userbot' },
+              { key: 'USERBOT_API_ID', value: userbotApiId ?? '', comment: '' },
+              { key: 'USERBOT_API_HASH', value: userbotApiHash ?? '', comment: '' },
+              { key: 'USERBOT_SESSION_STRING', value: userbotSessionString ?? '', comment: '' },
+            ];
+
+            for (const { key, value, comment } of envLines) {
+              const regex = new RegExp(`^${key}=.*`, 'm');
+              const line = `${key}=${value}`;
+              if (regex.test(updatedContent)) {
+                updatedContent = updatedContent.replace(regex, line);
+              } else if (value) {
+                const prefix = comment ? `\n${comment}\n` : '\n';
+                updatedContent = `${updatedContent.trim()}${prefix}${line}\n`;
+              }
+            }
+
+            if (updatedContent !== content) {
+              writeFileSync(envPath, updatedContent, 'utf8');
+              console.log(`✅ Userbot настройки обновлены в ${envPath}`);
+            }
+          }
+        }
+      } catch (envErr) {
+        console.warn('⚠️ Не удалось обновить .env файл бота:', envErr);
+      }
+
+      res.json({ success: true, userbotEnabled });
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка обновления настроек юзербота" });
+    }
+  });
+
+  /**
+   * Авторизация Telethon userbot — шаг 1: отправка кода
+   * POST /api/projects/:projectId/tokens/:tokenId/userbot/send-code
+   */
+  app.post("/api/projects/:projectId/tokens/:tokenId/userbot/send-code", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const { apiId, apiHash, phone } = req.body as { apiId: string; apiHash: string; phone: string };
+
+      if (!apiId || !apiHash || !phone) {
+        return res.status(400).json({ ok: false, message: "Заполните API ID, API Hash и номер телефона" });
+      }
+
+      const { sendAuthCommand } = await import('../bots/userbotAuthManager');
+      const result = await sendAuthCommand(tokenId, 'send_code', {
+        api_id: apiId,
+        api_hash: apiHash,
+        phone,
+      });
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ ok: false, message: error.message || "Ошибка отправки кода" });
+    }
+  });
+
+  /**
+   * Авторизация Telethon userbot — шаг 2: ввод кода
+   * POST /api/projects/:projectId/tokens/:tokenId/userbot/sign-in
+   */
+  app.post("/api/projects/:projectId/tokens/:tokenId/userbot/sign-in", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const { phone, code } = req.body as { phone: string; code: string };
+
+      if (!phone || !code) {
+        return res.status(400).json({ ok: false, message: "Заполните номер телефона и код" });
+      }
+
+      const { sendAuthCommand } = await import('../bots/userbotAuthManager');
+      const result = await sendAuthCommand(tokenId, 'sign_in', { phone, code });
+
+      // Если получили session_string — сохраняем в БД
+      if (result.ok && result.session_string) {
+        await storage.updateBotToken(tokenId, {
+          userbotSessionString: result.session_string,
+          userbotEnabled: 1,
+        });
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ ok: false, message: error.message || "Ошибка авторизации" });
+    }
+  });
+
+  /**
+   * Авторизация Telethon userbot — шаг 3: ввод 2FA пароля
+   * POST /api/projects/:projectId/tokens/:tokenId/userbot/sign-in-2fa
+   */
+  app.post("/api/projects/:projectId/tokens/:tokenId/userbot/sign-in-2fa", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const { password } = req.body as { password: string };
+
+      if (!password) {
+        return res.status(400).json({ ok: false, message: "Введите пароль" });
+      }
+
+      const { sendAuthCommand } = await import('../bots/userbotAuthManager');
+      const result = await sendAuthCommand(tokenId, 'sign_in_2fa', { password });
+
+      // Если получили session_string — сохраняем в БД
+      if (result.ok && result.session_string) {
+        await storage.updateBotToken(tokenId, {
+          userbotSessionString: result.session_string,
+          userbotEnabled: 1,
+        });
+      }
+
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ ok: false, message: error.message || "Ошибка 2FA авторизации" });
+    }
+  });
+
+  /**
    * Обновление уровня логирования для токена бота
    * PUT /api/projects/:projectId/tokens/:tokenId/log-level
    */
@@ -2212,8 +2380,11 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         u.language_code AS "languageCode",
         u.deep_link_param AS "deepLinkParam",
         u.referrer_id AS "referrerId",
+        u.user_data AS "userData",
         lm.message_text AS "lastMessageText",
-        lm.created_at AS "lastMessageAt"
+        lm.created_at AS "lastMessageAt",
+        FALSE AS "isGroup",
+        NULL AS "chatType"
       FROM bot_users u
       LEFT JOIN LATERAL (
         SELECT message_text, created_at
@@ -2228,6 +2399,49 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         AND ($2::integer IS NULL OR u.token_id = $2)
     `;
 
+    // Флаг включения групп в список диалогов
+    const includeGroups = req.query.includeGroups === 'true';
+
+    /**
+     * SQL-запрос для групп как диалогов (UNION ALL с основным запросом пользователей).
+     * Строится на основе bot_messages (chat_type IN group/supergroup/channel) —
+     * не требует записи в bot_groups. Группируем по chat_id, берём последнее сообщение.
+     */
+    const groupsUnionSql = `
+      UNION ALL
+      SELECT
+        (-(ROW_NUMBER() OVER (ORDER BY MAX(bm.created_at) DESC))::bigint) AS id,
+        bm.chat_id AS "userId",
+        NULL AS "userName",
+        COALESCE(bg.name, bm.chat_id) AS "firstName",
+        NULL AS "lastName",
+        bg.avatar_url AS "avatarUrl",
+        MIN(bm.created_at) AS "registeredAt",
+        MIN(bm.created_at) AS "createdAt",
+        MAX(bm.created_at) AS "lastInteraction",
+        COUNT(*)::integer AS "interactionCount",
+        TRUE AS "isActive",
+        FALSE AS "isPremium",
+        FALSE AS "isBlocked",
+        FALSE AS "isBot",
+        NULL AS "languageCode",
+        NULL AS "deepLinkParam",
+        NULL AS "referrerId",
+        NULL AS "userData",
+        (ARRAY_AGG(bm.message_text ORDER BY bm.created_at DESC))[1] AS "lastMessageText",
+        MAX(bm.created_at) AS "lastMessageAt",
+        TRUE AS "isGroup",
+        bm.chat_type AS "chatType"
+      FROM bot_messages bm
+      LEFT JOIN bot_groups bg
+        ON bg.group_id = bm.chat_id AND bg.project_id = bm.project_id
+      WHERE bm.project_id = $1
+        AND bm.chat_type IN ('group', 'supergroup', 'channel')
+        AND bm.chat_id IS NOT NULL
+        AND ($2::integer IS NULL OR bm.token_id = $2)
+      GROUP BY bm.chat_id, bm.chat_type, bg.name, bg.avatar_url
+    `;
+
     try {
       if (limit !== null) {
         // Режим пагинации: строим динамические условия WHERE
@@ -2237,9 +2451,25 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
 
         if (search) {
           const searchParam = `%${search}%`;
-          conditions.push(
-            `(u.first_name ILIKE $${paramIdx} OR u.username ILIKE $${paramIdx} OR u.user_id::text ILIKE $${paramIdx})`
-          );
+          /**
+           * Ищем не только по данным пользователя, но и по тексту сообщений диалога.
+           * EXISTS сохраняет корректную пагинацию без дублирования строк пользователя.
+           */
+          conditions.push(`
+            (
+              u.first_name ILIKE $${paramIdx}
+              OR u.username ILIKE $${paramIdx}
+              OR u.user_id::text ILIKE $${paramIdx}
+              OR EXISTS (
+                SELECT 1
+                FROM bot_messages bm
+                WHERE bm.project_id = u.project_id
+                  AND bm.user_id = u.user_id::text
+                  AND ($2::integer IS NULL OR bm.token_id = $2)
+                  AND COALESCE(bm.message_text, '') ILIKE $${paramIdx}
+              )
+            )
+          `);
           params.push(searchParam);
           paramIdx++;
         }
@@ -2248,11 +2478,15 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
 
         const whereExtra = conditions.length ? ' AND ' + conditions.join(' AND ') : '';
 
-        const dataSql = `${selectBase}${whereExtra} ORDER BY ${sortColumn} ${sortOrder} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
-        const countSql = `
-          SELECT COUNT(*)::integer AS total FROM bot_users u
-          WHERE u.is_bot = 0 AND u.project_id = $1 AND ($2::integer IS NULL OR u.token_id = $2)${whereExtra}
-        `;
+        // При includeGroups оборачиваем UNION в подзапрос для корректной пагинации
+        const unionPart = includeGroups ? groupsUnionSql : '';
+        const dataSql = includeGroups
+          ? `SELECT * FROM (${selectBase}${whereExtra} ${unionPart}) AS dialogs ORDER BY "lastInteraction" DESC NULLS LAST LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`
+          : `${selectBase}${whereExtra} ORDER BY ${sortColumn} ${sortOrder} LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`;
+
+        const countSql = includeGroups
+          ? `SELECT COUNT(*)::integer AS total FROM (${selectBase}${whereExtra} ${unionPart}) AS dialogs`
+          : `SELECT COUNT(*)::integer AS total FROM bot_users u WHERE u.is_bot = 0 AND u.project_id = $1 AND ($2::integer IS NULL OR u.token_id = $2)${whereExtra}`;
 
         const dataParams = [...params, limit, offset];
         const countParams = [...params];
@@ -2269,15 +2503,29 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       }
 
       // Обратная совместимость: возвращаем массив без пагинации (без фильтров)
-      const selectSql = `${selectBase} ORDER BY u.last_interaction DESC`;
+      const unionPart = includeGroups ? groupsUnionSql : '';
+      const selectSql = includeGroups
+        ? `SELECT * FROM (${selectBase} ${unionPart}) AS dialogs ORDER BY "lastInteraction" DESC NULLS LAST`
+        : `${selectBase} ORDER BY u.last_interaction DESC`;
       const result = await dbPool.query(selectSql, [projectId, tokenId]);
       console.log(`Found ${result.rows.length} users for project ${projectId}`);
       res.json(result.rows);
     } catch (error) {
       console.error("Error fetching user data:", error);
-      // Fallback to storage interface if bot_users table doesn't exist
+      // Fallback: прямой запрос к bot_users если основной запрос не сработал
       try {
-        const users = await storage.getUserBotDataByProject(parseInt(req.params.id), tokenId);
+        const fallbackResult = await dbPool.query(
+          `SELECT user_id AS "userId", username AS "userName", first_name AS "firstName",
+                  last_name AS "lastName", registered_at AS "registeredAt",
+                  last_interaction AS "lastInteraction", interaction_count AS "interactionCount",
+                  user_data AS "userData", is_active AS "isActive", avatar_url AS "avatarUrl",
+                  is_bot AS "isBot", project_id AS "projectId", token_id AS "tokenId",
+                  is_premium AS "isPremium", language_code AS "languageCode"
+           FROM bot_users WHERE project_id = $1 AND token_id = $2
+           ORDER BY last_interaction DESC`,
+          [parseInt(req.params.id), tokenId]
+        );
+        const users = fallbackResult.rows;
         const projectId = parseInt(req.params.id);
         console.log(`Found ${users.length} users for project ${projectId} from fallback`);
         res.json(limit !== null ? { users, total: users.length, hasMore: false } : users);
@@ -2339,40 +2587,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       res.json(stats);
     } catch (error) {
       console.error("Error fetching user stats:", error);
-      // Fallback to user_bot_data table if bot_users doesn't exist
-      try {
-        const fallbackResult = await dbPool.query(`
-          SELECT 
-            COUNT(*) as "totalUsers",
-            COUNT(*) FILTER (WHERE is_active = 1) as "activeUsers",
-            COUNT(*) FILTER (WHERE is_active = 0) as "blockedUsers",
-            COUNT(*) FILTER (WHERE is_premium = 1) as "premiumUsers",
-            COUNT(*) FILTER (WHERE user_data IS NOT NULL AND user_data != '{}') as "usersWithResponses",
-            (SELECT COALESCE(COUNT(*), 0) FROM bot_messages bm
-             WHERE bm.project_id = $1
-               AND ($2::integer IS NULL OR bm.token_id = $2)) as "totalInteractions",
-            CASE WHEN COUNT(*) > 0
-              THEN (SELECT COALESCE(COUNT(*), 0)::float FROM bot_messages bm
-                    WHERE bm.project_id = $1
-                      AND ($2::integer IS NULL OR bm.token_id = $2)) / COUNT(*)
-              ELSE 0
-            END as "avgInteractionsPerUser"
-          FROM user_bot_data
-          WHERE project_id = $1
-            AND ($2::integer IS NULL OR token_id = $2)
-        `, [req.params.id, tokenId]);
-
-        const stats = fallbackResult.rows[0];
-        Object.keys(stats).forEach(key => {
-          if (typeof stats[key] === 'string' && !isNaN(stats[key] as any)) {
-            stats[key] = parseInt(stats[key] as any);
-          }
-        });
-
-        res.json(stats);
-      } catch (fallbackError) {
-        res.status(500).json({ message: "Failed to fetch user stats" });
-      }
+      res.status(500).json({ message: "Failed to fetch user stats" });
     }
   });
 
@@ -2408,7 +2623,6 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
           AND ($2::integer IS NULL OR token_id = $2)
         GROUP BY COALESCE(deep_link_param, 'direct')
         ORDER BY count DESC
-        LIMIT 20
       `, [projectId, tokenId]);
 
       // Запрос распределения по языкам
@@ -2676,18 +2890,165 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   });
 
   /**
-   * Эндпоинт активности сообщений с поддержкой гранулярности
+   * Эндпоинт получения логов бота для проекта (системная таблица)
+   * @route GET /api/projects/:id/logs/all
+   * @returns Массив логов [{level, message, timestamp}]
+   */
+  app.get("/api/projects/:id/logs/all", async (req, res) => {
+    const projectId = parseInt(req.params.id);
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
+    const tokenId = getRequestTokenId(req);
+
+    try {
+      const result = await dbPool.query(
+        `SELECT bl.type AS level, SUBSTRING(bl.content, 1, 150) AS message, bl.timestamp AS "createdAt"
+         FROM bot_logs bl
+         WHERE bl.project_id = $1
+           AND ($2::integer IS NULL OR bl.token_id = $2)
+         ORDER BY bl.timestamp DESC
+         LIMIT $3`,
+        [projectId, tokenId, limit]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Error fetching logs:", error);
+      res.json([]);
+    }
+  });
+
+  /**
+   * Эндпоинт получения истории запусков бота для проекта
+   * @route GET /api/projects/:id/launches/all
+   * @returns Массив запусков [{status, started_at, stopped_at, error_message}]
+   */
+  app.get("/api/projects/:id/launches/all", async (req, res) => {
+    const projectId = parseInt(req.params.id);
+
+    try {
+      const result = await dbPool.query(
+        `SELECT blh.status, blh.started_at AS "startedAt", blh.stopped_at AS "stoppedAt",
+                SUBSTRING(blh.error_message, 1, 100) AS "errorMessage"
+         FROM bot_launch_history blh
+         JOIN bot_tokens bt ON bt.id = blh.token_id
+         WHERE bt.project_id = $1
+         ORDER BY blh.started_at DESC
+         LIMIT 100`,
+        [projectId]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      res.json([]);
+    }
+  });
+
+  /**
+   * Эндпоинт получения переменных пользователей (user_data развёрнутый в колонки)
+   * @route GET /api/projects/:id/users/variables
+   * @param id - Идентификатор проекта
+   * @query limit - Лимит записей (по умолчанию 200)
+   * @returns {columns: string[], rows: Array<{user_id, ...переменные}>}
+   */
+  app.get("/api/projects/:id/users/variables", async (req, res) => {
+    const projectId = parseInt(req.params.id);
+    const tokenId = getRequestTokenId(req);
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
+
+    try {
+      const result = await dbPool.query(
+        `SELECT user_id, username, first_name, user_data
+         FROM bot_users 
+         WHERE project_id = $1 
+           AND ($2::integer IS NULL OR token_id = $2)
+           AND user_data IS NOT NULL 
+           AND user_data != '{}'
+         ORDER BY last_interaction DESC
+         LIMIT $3`,
+        [projectId, tokenId, limit]
+      );
+
+      // Базовые колонки, которые не дублируем из user_data
+      const baseColumns = new Set(['user_id', 'username', 'user_name', 'first_name', 'last_name']);
+
+      // Собираем все уникальные ключи из user_data (исключая базовые и служебные)
+      const allKeys = new Set<string>();
+      for (const row of result.rows) {
+        if (row.user_data && typeof row.user_data === 'object') {
+          Object.keys(row.user_data).forEach(k => {
+            if (!k.startsWith('_') && !k.startsWith('waiting_') && !k.startsWith('input_') && !baseColumns.has(k)) {
+              allKeys.add(k);
+            }
+          });
+        }
+      }
+
+      const columns = ['user_id', 'username', ...Array.from(allKeys).sort()];
+      const rows = result.rows.map((r: any) => {
+        const row: Record<string, string> = {
+          user_id: String(r.user_id),
+          username: r.username || '',
+        };
+        for (const key of allKeys) {
+          const val = r.user_data?.[key];
+          row[key] = val != null ? (typeof val === 'object' ? JSON.stringify(val) : String(val)) : '';
+        }
+        return row;
+      });
+
+      res.json({ columns, rows });
+    } catch (error) {
+      console.error("Error fetching user variables:", error);
+      res.status(500).json({ message: "Ошибка при получении переменных" });
+    }
+  });
+
+  /**
+   * Эндпоинт получения всех сообщений проекта (для системной таблицы)
+   * @route GET /api/projects/:id/messages/all
+   * @param id - Идентификатор проекта
+   * @query limit - Лимит записей (по умолчанию 200)
+   * @query offset - Смещение (по умолчанию 0)
+   * @returns Массив сообщений [{id, userId, messageType, messageText, chatType, createdAt}]
+   */
+  app.get("/api/projects/:id/messages/all", async (req, res) => {
+    const projectId = parseInt(req.params.id);
+    const tokenId = getRequestTokenId(req);
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 200;
+    const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
+    try {
+      const result = await dbPool.query(
+        `SELECT id, user_id AS "userId", message_type AS "messageType", 
+                COALESCE(SUBSTRING(message_text, 1, 100), '') AS "messageText",
+                chat_type AS "chatType", chat_id AS "chatId",
+                created_at AS "createdAt"
+         FROM bot_messages 
+         WHERE project_id = $1 AND ($2::integer IS NULL OR token_id = $2)
+         ORDER BY created_at DESC 
+         LIMIT $3 OFFSET $4`,
+        [projectId, tokenId, limit, offset]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Error fetching all messages:", error);
+      res.status(500).json({ message: "Ошибка при получении сообщений" });
+    }
+  });
+
+  /**
+   * Эндпоинт активности сообщений с поддержкой гранулярности и разбивки по направлению
    * @route GET /api/projects/:id/messages/activity
    * @param id - Идентификатор проекта
    * @query granularity - Гранулярность: "1m"|"5m"|"1h"|"1d"|"7d"|"30d" (новый параметр)
    * @query period - Период: "7d"|"30d"|"90d" (старый параметр, для обратной совместимости)
-   * @returns Массив объектов [{date, count}] — дата в ISO формате
+   * @query split - "true" — вернуть [{date, incoming, outgoing}] вместо [{date, count}]
+   * @returns Массив объектов [{date, count}] или [{date, incoming, outgoing}] при split=true
    */
   app.get("/api/projects/:id/messages/activity", async (req, res) => {
     const projectId = parseInt(req.params.id);
     const tokenId = getRequestTokenId(req);
     const granularity = req.query.granularity as string | undefined;
     const period = (req.query.period as string) || "30d";
+    const split = req.query.split === "true";
 
     const ownerId = getOwnerIdFromRequest(req);
     if (ownerId !== null) {
@@ -2706,7 +3067,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
          * 5m  — последние 3 часа с шагом 5 минут (36 точек)
          * 1h  — последние 24 часа с шагом 1 час (24 точки)
          * 1d  — последние 30 дней с шагом 1 день (30 точек)
-         * 7d  — последние 13 недель с шагом 1 неделя (~13 точек)
+         * 7d  — последние 12 недель с шагом 1 неделя (~12 точек)
          * 30d — последние 12 месяцев с шагом 1 месяц (12 точек)
          * fillGaps=true означает заполнение пустых интервалов нулями через generate_series.
          */
@@ -2721,6 +3082,72 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         const cfg = granularityConfig[granularity] ?? granularityConfig["1d"];
 
         let queryText: string;
+
+        if (split) {
+          // Режим split: группируем по слоту И message_type, затем pivot через FILTER
+          if (granularity === "5m") {
+            queryText = `
+              WITH series AS (
+                SELECT generate_series(
+                  DATE_TRUNC('hour', NOW() - INTERVAL '${cfg.window}'),
+                  DATE_TRUNC('hour', NOW()) + INTERVAL '55 minutes',
+                  INTERVAL '${cfg.step}'
+                ) AS slot
+              ),
+              msgs AS (
+                SELECT
+                  DATE_TRUNC('hour', created_at) + INTERVAL '5 min' * FLOOR(EXTRACT(MINUTE FROM created_at) / 5) AS slot,
+                  COUNT(*) FILTER (WHERE message_type = 'user') AS incoming,
+                  COUNT(*) FILTER (WHERE message_type = 'bot')  AS outgoing
+                FROM bot_messages
+                WHERE project_id = $1
+                  AND ($2::integer IS NULL OR token_id = $2)
+                  AND created_at >= NOW() - INTERVAL '${cfg.window}'
+                GROUP BY 1
+              )
+              SELECT s.slot AS date,
+                     COALESCE(m.incoming, 0) AS incoming,
+                     COALESCE(m.outgoing, 0) AS outgoing
+              FROM series s
+              LEFT JOIN msgs m ON m.slot = s.slot
+              ORDER BY s.slot ASC
+            `;
+          } else {
+            queryText = `
+              WITH series AS (
+                SELECT generate_series(
+                  DATE_TRUNC('${cfg.truncate}', NOW() - INTERVAL '${cfg.window}'),
+                  DATE_TRUNC('${cfg.truncate}', NOW()),
+                  INTERVAL '${cfg.step}'
+                ) AS slot
+              ),
+              msgs AS (
+                SELECT
+                  DATE_TRUNC('${cfg.truncate}', created_at) AS slot,
+                  COUNT(*) FILTER (WHERE message_type = 'user') AS incoming,
+                  COUNT(*) FILTER (WHERE message_type = 'bot')  AS outgoing
+                FROM bot_messages
+                WHERE project_id = $1
+                  AND ($2::integer IS NULL OR token_id = $2)
+                  AND created_at >= NOW() - INTERVAL '${cfg.window}'
+                GROUP BY 1
+              )
+              SELECT s.slot AS date,
+                     COALESCE(m.incoming, 0) AS incoming,
+                     COALESCE(m.outgoing, 0) AS outgoing
+              FROM series s
+              LEFT JOIN msgs m ON m.slot = s.slot
+              ORDER BY s.slot ASC
+            `;
+          }
+          const result = await dbPool.query(queryText, [projectId, tokenId]);
+          return res.json(result.rows.map(row => ({
+            date: row.date instanceof Date ? row.date.toISOString() : String(row.date),
+            incoming: Number(row.incoming),
+            outgoing: Number(row.outgoing),
+          })));
+        }
+
         if (granularity === "5m") {
           // Группировка по 5-минутным интервалам через FLOOR + generate_series для заполнения пустых слотов
           queryText = `
@@ -2954,12 +3381,15 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   // Get specific user data by ID
   app.get("/api/users/:id", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const userData = await storage.getUserBotData(id);
-      if (!userData) {
+      const id = req.params.id;
+      const result = await dbPool.query(
+        `SELECT * FROM bot_users WHERE user_id = $1 LIMIT 1`,
+        [id]
+      );
+      if (result.rows.length === 0) {
         return res.status(404).json({ message: "User data not found" });
       }
-      res.json(userData);
+      res.json(result.rows[0]);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user data" });
     }
@@ -2971,11 +3401,14 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       const projectId = parseInt(req.params.projectId);
       const userId = req.params.userId;
       const tokenId = getRequestTokenId(req);
-      const userData = await storage.getUserBotDataByProjectAndUser(projectId, userId, tokenId);
-      if (!userData) {
+      const result = await dbPool.query(
+        `SELECT * FROM bot_users WHERE project_id = $1 AND user_id = $2 AND token_id = $3 LIMIT 1`,
+        [projectId, userId, tokenId ?? 0]
+      );
+      if (result.rows.length === 0) {
         return res.status(404).json({ message: "User data not found" });
       }
-      res.json(userData);
+      res.json(result.rows[0]);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch user data" });
     }
@@ -2986,13 +3419,18 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
     try {
       const projectId = parseInt(req.params.id);
       const tokenId = getRequestTokenId(req) ?? 0;
-      const validatedData = insertUserBotDataSchema.parse({
-        ...req.body,
-        projectId,
-        tokenId,
-      });
-      const userData = await storage.createUserBotData(validatedData);
-      res.status(201).json(userData);
+      const { userId, username, firstName, lastName, languageCode, isBot, isPremium } = req.body;
+      if (!userId) {
+        return res.status(400).json({ message: "userId обязателен" });
+      }
+      const result = await dbPool.query(
+        `INSERT INTO bot_users (user_id, project_id, token_id, username, first_name, last_name, language_code, is_bot, is_premium, registered_at, last_interaction)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+         ON CONFLICT (user_id, project_id, token_id) DO UPDATE SET last_interaction = NOW()
+         RETURNING *`,
+        [userId, projectId, tokenId, username ?? null, firstName ?? null, lastName ?? null, languageCode ?? null, isBot ?? 0, isPremium ?? 0]
+      );
+      res.status(201).json(result.rows[0]);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Invalid data", errors: error.errors });
@@ -3054,28 +3492,7 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
       res.json(result.rows[0]);
     } catch (error) {
       console.error("Ошибка обновления пользователя в bot_users:", error);
-      // Fallback to regular update if bot_users table doesn't exist
-      try {
-        const validatedData = insertUserBotDataSchema.partial().parse({
-          ...req.body,
-          projectId,
-          tokenId: effectiveTokenId ?? requestedTokenId ?? 0,
-        });
-        const existingUserData = await storage.getUserBotDataByProjectAndUser(
-          projectId,
-          userId,
-          effectiveTokenId ?? requestedTokenId
-        );
-        const userData = existingUserData
-          ? await storage.updateUserBotData(existingUserData.id, validatedData)
-          : undefined;
-        if (!userData) {
-          return res.status(404).json({ message: "User data not found" });
-        }
-        res.json(userData);
-      } catch (fallbackError) {
-        res.status(500).json({ message: "Failed to update user data" });
-      }
+      res.status(500).json({ message: "Failed to update user data" });
     }
   });
 
@@ -3112,21 +3529,10 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
           return res.json({ message: "User data deleted successfully" });
         }
       } catch (dbError) {
-        console.log("bot_users table not found, falling back to user_bot_data");
-      }
-
-      // Fallback: удаляем из user_bot_data таблицы
-      const existingUserData = await storage.getUserBotDataByProjectAndUser(
-        projectId,
-        String(id),
-        tokenId ?? requestedTokenId
-      );
-      const success = existingUserData
-        ? await storage.deleteUserBotData(existingUserData.id)
-        : false;
-      if (!success) {
+        console.log("bot_users delete error:", (dbError as any).message);
         return res.status(404).json({ message: "User data not found" });
       }
+
       res.json({ message: "User data deleted successfully" });
     } catch (error) {
       console.error("Failed to delete user data:", error);
@@ -3181,17 +3587,6 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         console.log("bot_messages table not found or error:", (dbError as any).message);
       }
 
-      // Подсчитываем количество записей в user_bot_data перед удалением
-      const existingUserData = await storage.getUserBotDataByProject(projectId, tokenId);
-      const userBotDataCount = existingUserData.length;
-
-      // Удаляем из user_bot_data таблицы
-      const fallbackSuccess = await storage.deleteUserBotDataByProject(projectId, tokenId);
-      if (fallbackSuccess) {
-        totalDeleted += userBotDataCount;
-        console.log(`Deleted ${userBotDataCount} users from user_bot_data for project ${projectId}`);
-      }
-
       res.json({
         message: "All user data deleted successfully",
         deleted: true,
@@ -3223,8 +3618,15 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
         return res.status(400).json({ message: "Search query is required" });
       }
 
-      const users = await storage.searchUserBotData(projectId, query.trim(), tokenId);
-      res.json(users);
+      const searchTerm = `%${query.trim().toLowerCase()}%`;
+      const result = await dbPool.query(
+        `SELECT * FROM bot_users
+         WHERE project_id = $1 AND token_id = $2
+           AND (username ILIKE $3 OR first_name ILIKE $3 OR last_name ILIKE $3 OR user_id::text ILIKE $3)
+         ORDER BY last_interaction DESC`,
+        [projectId, tokenId ?? 0, searchTerm]
+      );
+      res.json(result.rows);
     } catch (error) {
       res.status(500).json({ message: "Failed to search user data" });
     }
@@ -3233,9 +3635,15 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   // Increment user interaction count
   app.post("/api/users/:id/interaction", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
-      const success = await storage.incrementUserInteraction(id);
-      if (!success) {
+      const id = req.params.id;
+      const projectId = Number(req.body?.projectId ?? 0);
+      const tokenId = getRequestTokenId(req) ?? 0;
+      const result = await dbPool.query(
+        `UPDATE bot_users SET interaction_count = interaction_count + 1, last_interaction = NOW()
+         WHERE user_id = $1 AND project_id = $2 AND token_id = $3`,
+        [id, projectId, tokenId]
+      );
+      if (!result.rowCount || result.rowCount === 0) {
         return res.status(404).json({ message: "User data not found" });
       }
       res.json({ message: "Interaction count incremented" });
@@ -3247,15 +3655,21 @@ export async function registerRoutes(app: Express, httpServer?: Server): Promise
   // Update user state
   app.put("/api/users/:id/state", async (req, res) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = req.params.id;
       const { state } = req.body;
+      const projectId = Number(req.body?.projectId ?? 0);
+      const tokenId = getRequestTokenId(req) ?? 0;
 
       if (!state || typeof state !== 'string') {
         return res.status(400).json({ message: "State is required and must be a string" });
       }
 
-      const success = await storage.updateUserState(id, state);
-      if (!success) {
+      const result = await dbPool.query(
+        `UPDATE bot_users SET user_data = jsonb_set(COALESCE(user_data, '{}'), '{current_state}', to_jsonb($1::text))
+         WHERE user_id = $2 AND project_id = $3 AND token_id = $4`,
+        [state, id, projectId, tokenId]
+      );
+      if (!result.rowCount || result.rowCount === 0) {
         return res.status(404).json({ message: "User data not found" });
       }
       res.json({ message: "User state updated successfully" });
@@ -4534,6 +4948,276 @@ function setupTemplates(app: Express, requireDbReady: (_req: any, res: any, next
 
     // Redirect to the proper API endpoint to handle the code
     res.redirect(`/api/google-auth/callback?code=${encodeURIComponent(code)}`);
+  });
+
+  // ─── Переменные окружения бота (веб-клиент, без telegram_id) ───
+
+  /**
+   * Получение списка переменных окружения токена
+   * GET /api/projects/:projectId/tokens/:tokenId/env-variables
+   */
+  app.get("/api/projects/:projectId/tokens/:tokenId/env-variables", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const items = await storage.getEnvVariables(tokenId);
+      const masked = items.map(item => ({
+        ...item,
+        value: item.isSecret ? "••••••••" : item.value,
+      }));
+      res.json({ items: masked, count: masked.length });
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка получения переменных окружения" });
+    }
+  });
+
+  /**
+   * Создание переменной окружения
+   * POST /api/projects/:projectId/tokens/:tokenId/env-variables
+   */
+  app.post("/api/projects/:projectId/tokens/:tokenId/env-variables", async (req, res) => {
+    try {
+      const tokenId = parseInt(req.params.tokenId);
+      const { key, value, isSecret } = req.body as { key: string; value?: string; isSecret?: number };
+
+      if (!key || !/^[A-Z][A-Z0-9_]*$/.test(key)) {
+        return res.status(400).json({ message: "Некорректное имя переменной (A-Z, 0-9, _)" });
+      }
+
+      const existing = await storage.getEnvVariables(tokenId);
+      if (existing.some(v => v.key === key)) {
+        return res.status(409).json({ message: `Переменная ${key} уже существует` });
+      }
+
+      const variable = await storage.createEnvVariable({
+        tokenId,
+        key,
+        value: value ?? "",
+        isSecret: isSecret ?? 0,
+      });
+      res.status(201).json(variable);
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка создания переменной окружения" });
+    }
+  });
+
+  /**
+   * Обновление переменной окружения
+   * PUT /api/projects/:projectId/tokens/:tokenId/env-variables/:id
+   */
+  app.put("/api/projects/:projectId/tokens/:tokenId/env-variables/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      // Пропускаем если это batch-запрос (обрабатывается отдельным роутом)
+      if (isNaN(id)) return res.status(400).json({ message: "Некорректный id" });
+      const { key, value, isSecret } = req.body as { key?: string; value?: string; isSecret?: number };
+
+      if (key && !/^[A-Z][A-Z0-9_]*$/.test(key)) {
+        return res.status(400).json({ message: "Некорректное имя переменной" });
+      }
+
+      const variable = await storage.getEnvVariable(id);
+      if (!variable) return res.status(404).json({ message: "Переменная не найдена" });
+
+      if (key && key !== variable.key) {
+        const existing = await storage.getEnvVariables(variable.tokenId);
+        if (existing.some(v => v.key === key && v.id !== id)) {
+          return res.status(409).json({ message: `Переменная ${key} уже существует` });
+        }
+      }
+
+      const updateData: Record<string, any> = {};
+      if (key !== undefined) updateData.key = key;
+      if (value !== undefined) updateData.value = value;
+      if (isSecret !== undefined) updateData.isSecret = isSecret;
+
+      const updated = await storage.updateEnvVariable(id, updateData);
+      if (!updated) return res.status(404).json({ message: "Не удалось обновить" });
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка обновления переменной окружения" });
+    }
+  });
+
+  /**
+   * Удаление переменной окружения
+   * DELETE /api/projects/:projectId/tokens/:tokenId/env-variables/:id
+   */
+  app.delete("/api/projects/:projectId/tokens/:tokenId/env-variables/:id", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const deleted = await storage.deleteEnvVariable(id);
+      if (!deleted) return res.status(404).json({ message: "Переменная не найдена" });
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка удаления переменной окружения" });
+    }
+  });
+
+  /**
+   * Раскрытие секретного значения переменной
+   * GET /api/projects/:projectId/tokens/:tokenId/env-variables/:id/reveal
+   */
+  app.get("/api/projects/:projectId/tokens/:tokenId/env-variables/:id/reveal", async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const variable = await storage.getEnvVariable(id);
+      if (!variable) return res.status(404).json({ message: "Переменная не найдена" });
+      res.json({ value: variable.value });
+    } catch (error) {
+      res.status(500).json({ message: "Ошибка получения значения" });
+    }
+  });
+
+  /**
+   * Получение списка доступных серверных переменных (только ключи, без значений)
+   * GET /api/server/env-keys
+   */
+  app.get("/api/server/env-keys", (_req, res) => {
+    /** Ключи из серверного окружения, доступные для подстановки */
+    const allowedKeys = [
+      'DATABASE_URL', 'REDIS_URL', 'WEBHOOK_BASE_URL',
+      'API_BASE_URL', 'NODE_ENV',
+      'PGHOST', 'PGPORT', 'PGDATABASE', 'PGUSER',
+    ];
+
+    /** Возвращаем только ключи (без значений — безопасность) */
+    const items = allowedKeys
+      .filter(key => process.env[key] !== undefined && process.env[key] !== '')
+      .map(key => ({ key }));
+
+    res.json({ items });
+  });
+
+  /**
+   * Batch-обновление переменных окружения (единый эндпоинт)
+   * PUT /api/projects/:projectId/tokens/:tokenId/env-batch
+   *
+   * Принимает массив изменений и маппит каждое на нужное хранилище:
+   * - BOT_TOKEN → bot_tokens.token
+   * - ADMIN_IDS → bot_projects.adminIds
+   * - USER_DATABASE → bot_projects.userDatabaseEnabled
+   * - LOG_LEVEL → bot_tokens.logLevel
+   * - PROTECT_CONTENT → bot_tokens.protectContent
+   * - SAVE_INCOMING_MEDIA → bot_tokens.saveIncomingMedia
+   * - AUTO_RESTART → bot_tokens.autoRestart
+   * - MAX_RESTART_ATTEMPTS → bot_tokens.maxRestartAttempts
+   * - Остальные → bot_env_variables (CRUD)
+   */
+  app.put("/api/projects/:projectId/tokens/:tokenId/env-batch", async (req, res) => {
+    try {
+      const projectId = parseInt(req.params.projectId);
+      const tokenId = parseInt(req.params.tokenId);
+      const { changes } = req.body as { changes: Array<{ action: string; key: string; value?: string; id?: number; isSecret?: number }> };
+
+      console.log(`[env-batch] projectId=${projectId} tokenId=${tokenId} changes=${changes?.length ?? 0}`);
+
+      if (!Array.isArray(changes) || changes.length === 0) {
+        return res.status(400).json({ message: "Массив changes обязателен" });
+      }
+
+      /** Маппинг системных ключей на поля bot_tokens */
+      const tokenFieldMap: Record<string, string> = {
+        BOT_TOKEN: 'token',
+        LOG_LEVEL: 'logLevel',
+        PROTECT_CONTENT: 'protectContent',
+        SAVE_INCOMING_MEDIA: 'saveIncomingMedia',
+        AUTO_RESTART: 'autoRestart',
+        MAX_RESTART_ATTEMPTS: 'maxRestartAttempts',
+        LAUNCH_MODE: 'launchMode',
+        WEBHOOK_BASE_URL: 'webhookBaseUrl',
+        WEBHOOK_SECRET_TOKEN: 'webhookSecretToken',
+      };
+
+      /** Ключи, которые хранятся в bot_env_variables */
+      const envVarKeys = new Set([
+        'API_BASE_URL', 'API_PORT', 'API_USE_SSL', 'API_TIMEOUT',
+        'DISABLE_ASYNC_LOG', 'REDIS_URL', 'DATABASE_URL',
+        'MAX_UPDATE_AGE_SECONDS', 'WEBHOOK_PORT',
+      ]);
+
+      /** Секретные ключи */
+      const secretKeys = new Set(['REDIS_URL', 'DATABASE_URL']);
+
+      const results: string[] = [];
+
+      for (const change of changes) {
+        const { action, key, value, id, isSecret } = change;
+        console.log(`[env-batch]   ${action} ${key}${id ? ` id=${id}` : ''}`);
+
+        if (action === 'delete' && id) {
+          await storage.deleteEnvVariable(id);
+          results.push(`deleted:${key || id}`);
+          continue;
+        }
+
+        if (action === 'create' && key && value !== undefined) {
+          await storage.createEnvVariable({ tokenId, key, value, isSecret: isSecret ?? 0 });
+          results.push(`created:${key}`);
+          continue;
+        }
+
+        if (action === 'update' && key && value !== undefined) {
+          // ADMIN_IDS → обновляем проект
+          if (key === 'ADMIN_IDS') {
+            await storage.updateBotProject(projectId, { adminIds: value });
+            results.push(`updated:ADMIN_IDS`);
+            continue;
+          }
+
+          // USER_DATABASE → обновляем проект
+          if (key === 'USER_DATABASE') {
+            await storage.updateBotProject(projectId, { userDatabaseEnabled: value === '1' ? 1 : 0 });
+            results.push(`updated:USER_DATABASE`);
+            continue;
+          }
+
+          // Поля bot_tokens (BOT_TOKEN, LOG_LEVEL, PROTECT_CONTENT, SAVE_INCOMING_MEDIA, AUTO_RESTART, MAX_RESTART_ATTEMPTS)
+          if (tokenFieldMap[key]) {
+            const field = tokenFieldMap[key];
+            let dbValue: any = value;
+            if (key === 'PROTECT_CONTENT' || key === 'SAVE_INCOMING_MEDIA' || key === 'AUTO_RESTART') {
+              dbValue = value === 'true' || value === '1' ? 1 : 0;
+            }
+            if (key === 'MAX_RESTART_ATTEMPTS') {
+              dbValue = parseInt(value!) || 3;
+            }
+            if (key === 'WEBHOOK_BASE_URL' || key === 'WEBHOOK_SECRET_TOKEN') {
+              dbValue = value || null;
+            }
+            await storage.updateBotToken(tokenId, { [field]: dbValue });
+            results.push(`updated:${key}`);
+            continue;
+          }
+
+          // Переменные из bot_env_variables
+          if (envVarKeys.has(key)) {
+            const existing = await storage.getEnvVariables(tokenId);
+            const found = existing.find(v => v.key === key);
+            if (found) {
+              await storage.updateEnvVariable(found.id, { value });
+            } else {
+              await storage.createEnvVariable({ tokenId, key, value, isSecret: secretKeys.has(key) ? 1 : 0 });
+            }
+            results.push(`updated:${key}`);
+            continue;
+          }
+
+          // Кастомная переменная по ID
+          if (id) {
+            await storage.updateEnvVariable(id, { value });
+            results.push(`updated:${key || id}`);
+            continue;
+          }
+
+          results.push(`skipped:${key}`);
+        }
+      }
+
+      res.json({ success: true, applied: results.length, results });
+    } catch (error: any) {
+      console.error("[env-batch] Ошибка:", error?.message || error);
+      res.status(500).json({ message: "Ошибка batch обновления переменных" });
+    }
   });
 
   // Setup Google Auth routes

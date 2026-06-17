@@ -49,13 +49,19 @@ export function getBadgeText(variable: Variable): string {
     conditional: '❓ Условие',
     callback_trigger: '👆 Инлайн-триггер',
     managed_bot_updated_trigger: '🤖 Управляемый бот',
+    schedule_trigger: '⏰ Таймер',
     get_managed_bot_token: '🔑 Токен бота',
     message_id: '🆔 ID сообщения',
     http_request: '🌐 HTTP',
     input: '⌨️ Ввод',
+    media_meta: '📎 Медиа',
     set_variable: '✏️ Переменная',
     psql_query: '🗄️ SQL',
     convert_file: '📄 Файл',
+    bot_table: '🗄️ Таблица',
+    table: '📊 Таблица',
+    userbot_click_button: '🟣 Юзербот',
+    userbot_message: '🟣 Юзербот',
   };
   return labels[variable.nodeType] || '📌';
 }
@@ -66,6 +72,14 @@ export function getBadgeText(variable: Variable): string {
  * @returns React компонент с информацией
  */
 export function getNodeInfo(variable: Variable) {
+  // Для таблиц проекта (bot_tables) показываем описание
+  if ((variable.nodeType as string) === 'table') {
+    return (
+      <div className="text-[10px] text-amber-500 dark:text-amber-400 mt-0.5 truncate">
+        📊 {variable.description}
+      </div>
+    );
+  }
   // Для callback_trigger показываем описание триггера
   if (variable.nodeType === 'callback_trigger') {
     return (
@@ -133,6 +147,14 @@ export function getNodeInfo(variable: Variable) {
       </div>
     );
   }
+  // Для schedule_trigger показываем описание переменной
+  if ((variable.nodeType as string) === 'schedule_trigger') {
+    return (
+      <div className="text-[10px] text-teal-500 dark:text-teal-400 mt-0.5 truncate">
+        ⏰ {variable.description}
+      </div>
+    );
+  }
   // Для message_id показываем описание ID сообщения
   if ((variable.nodeType as string) === 'message_id') {
     return (
@@ -165,6 +187,14 @@ export function getNodeInfo(variable: Variable) {
       </div>
     );
   }
+  // Для bot_table показываем описание (таблица и операция)
+  if ((variable.nodeType as string) === 'bot_table') {
+    return (
+      <div className="text-[10px] text-amber-500 dark:text-amber-400 mt-0.5 truncate">
+        🗄️ {variable.description}
+      </div>
+    );
+  }
   // Для set_variable показываем описание
   if ((variable.nodeType as string) === 'set_variable') {
     return (
@@ -178,6 +208,30 @@ export function getNodeInfo(variable: Variable) {
     return (
       <div className="text-[10px] text-cyan-500 dark:text-cyan-400 mt-0.5 truncate">
         ⌨️ {variable.description}
+      </div>
+    );
+  }
+  // Для media_meta показываем описание метаданных
+  if ((variable.nodeType as string) === 'media_meta') {
+    return (
+      <div className="text-[10px] text-cyan-500 dark:text-cyan-400 mt-0.5 truncate">
+        📎 {variable.description}
+      </div>
+    );
+  }
+  // Для userbot_click_button показываем описание
+  if ((variable.nodeType as string) === 'userbot_click_button') {
+    return (
+      <div className="text-[10px] text-violet-500 dark:text-violet-400 mt-0.5 truncate">
+        🟣 {variable.description}
+      </div>
+    );
+  }
+  // Для userbot_message показываем описание
+  if ((variable.nodeType as string) === 'userbot_message') {
+    return (
+      <div className="text-[10px] text-violet-500 dark:text-violet-400 mt-0.5 truncate">
+        🟣 {variable.description}
       </div>
     );
   }

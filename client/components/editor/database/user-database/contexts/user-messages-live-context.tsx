@@ -32,6 +32,10 @@ export interface NewMessageLiveEvent {
     id: number;
     /** Время создания в ISO-формате */
     createdAt: string;
+    /** Telegram chat_id группового чата (null для личных сообщений) */
+    chatId?: string | null;
+    /** Тип чата: 'private', 'group', 'supergroup', 'channel' */
+    chatType?: string | null;
   };
   /** Временная метка события */
   timestamp: string;
@@ -76,7 +80,55 @@ export interface NewUserLiveEvent {
 }
 
 /** Все типы live-событий */
-export type LiveEvent = NewMessageLiveEvent | NewUserLiveEvent | BroadcastProgressLiveEvent;
+export type LiveEvent = NewMessageLiveEvent | NewUserLiveEvent | BroadcastProgressLiveEvent | MessageDeletedLiveEvent | MessageEditedLiveEvent;
+
+/**
+ * Структура WS-события редактирования сообщения в диалоге
+ */
+export interface MessageEditedLiveEvent {
+  /** Тип события */
+  type: 'message-edited';
+  /** Идентификатор проекта */
+  projectId: number;
+  /** Идентификатор токена */
+  tokenId?: number;
+  /** Данные отредактированного сообщения */
+  data: {
+    /** Внутренний ID сообщения */
+    messageId: number;
+    /** Идентификатор пользователя (строка) */
+    userId: string;
+    /** Новый текст сообщения */
+    messageText: string;
+    /** Инлайн-кнопки сообщения (для live-обновления раскладки у всех клиентов) */
+    buttons?: unknown[];
+    /** Количество кнопок в одном ряду */
+    buttonsPerRow?: number;
+  };
+  /** Временная метка события */
+  timestamp: string;
+}
+
+/**
+ * Структура WS-события удаления сообщения из диалога
+ */
+export interface MessageDeletedLiveEvent {
+  /** Тип события */
+  type: 'message-deleted';
+  /** Идентификатор проекта */
+  projectId: number;
+  /** Идентификатор токена */
+  tokenId?: number;
+  /** Данные удалённого сообщения */
+  data: {
+    /** Внутренний ID удалённого сообщения */
+    messageId: number;
+    /** Идентификатор пользователя (строка) */
+    userId: string;
+  };
+  /** Временная метка события */
+  timestamp: string;
+}
 
 /**
  * Структура WS-события прогресса рассылки
@@ -159,7 +211,7 @@ export function UserMessagesLiveProvider({ projectId, children }: UserMessagesLi
         try {
           const msg = JSON.parse(event.data as string) as LiveEvent;
           // Пропускаем только поддерживаемые типы событий
-          if (msg.type !== 'new-message' && msg.type !== 'new-user' && msg.type !== 'broadcast-progress') return;
+          if (msg.type !== 'new-message' && msg.type !== 'new-user' && msg.type !== 'broadcast-progress' && msg.type !== 'message-deleted' && msg.type !== 'message-edited') return;
           console.log(`[LiveProvider] событие ${msg.type} projectId=${msg.projectId} (ожидаем ${projectId}), подписчиков: ${listenersRef.current.size}`);
           if (msg.projectId !== projectId) return;
           console.log(`[LiveProvider] → рассылаем ${listenersRef.current.size} подписчикам`);

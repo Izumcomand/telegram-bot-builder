@@ -33,7 +33,7 @@ export function DialogHeader({
   users,
   formatUserName,
   onSelectUser,
-  onClose
+  onClose,
 }: DialogHeaderProps) {
   // Защита: если users не массив, используем пустой массив
   const usersArray = Array.isArray(users) ? users : [];

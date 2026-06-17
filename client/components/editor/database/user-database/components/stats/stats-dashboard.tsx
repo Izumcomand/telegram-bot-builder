@@ -16,6 +16,7 @@ import { GrowthGranularitySelector } from './growth-granularity-selector';
 import { ChartModeToggle, ChartMode } from './chart-mode-toggle';
 import { ChartTypeToggle, ChartType } from './chart-type-toggle';
 import { SourceModeToggle, SourceMode } from './source-mode-toggle';
+import { ActivitySplitToggle, ActivitySplitMode } from './activity-split-toggle';
 import { aggregateTopSources } from './source-aggregation-utils';
 import { AnalyticsSourcesChart } from '@/components/editor/analytics/analytics-sources-chart';
 
@@ -82,14 +83,24 @@ export function StatsDashboard(props: StatsDashboardProps): React.JSX.Element {
   /** Режим отображения прироста: общий или по источникам */
   const [sourceMode, setSourceMode] = useState<SourceMode>('total');
 
+  /** Режим отображения активности: все / входящие+исходящие */
+  const [activitySplitMode, setActivitySplitMode] = useState<ActivitySplitMode>('total');
+
   const { points, weeklyGrowth } = useGrowth({ projectId, selectedTokenId, granularity: growthGranularity });
   const { points: sourcePoints } = useGrowthBySource({ projectId, selectedTokenId, granularity: growthGranularity });
   const { sources, languages } = useTraffic({ projectId, selectedTokenId });
-  const { points: messagePoints, weeklyMessages } = useMessagesActivity({
+  const { points: messagePoints, outgoingPoints, weeklyMessages } = useMessagesActivity({
     projectId,
     selectedTokenId,
     granularity: msgGranularity,
+    split: activitySplitMode === 'split',
   });
+
+  /** Multi-line данные для графика активности: входящие + исходящие */
+  const activityMultiLine = activitySplitMode === 'split' ? [
+    { name: 'Входящие', data: messagePoints, color: '#10b981' },
+    { name: 'Исходящие', data: outgoingPoints, color: '#6366f1' },
+  ] : undefined;
 
   // Определяем тренд по недельному приросту
   const growthTrend = weeklyGrowth > 0 ? 'up' : weeklyGrowth < 0 ? 'down' : 'neutral';
@@ -114,9 +125,11 @@ export function StatsDashboard(props: StatsDashboardProps): React.JSX.Element {
   }));
 
   // Формируем подпись для карточки активности
-  const activitySubtitle = stats.avgInteractionsPerUser !== undefined
-    ? `~${formatAvg(stats.avgInteractionsPerUser)} среднее`
-    : undefined;
+  const activitySubtitle = weeklyMessages > 0
+    ? `+${weeklyMessages} за неделю`
+    : stats.avgInteractionsPerUser !== undefined
+      ? `~${formatAvg(stats.avgInteractionsPerUser)} среднее`
+      : undefined;
 
   // Агрегируем данные по источникам для multi-line графика
   const multiLineData = sourceMode === 'by-source' ? aggregateTopSources(sourcePoints, 5) : undefined;
@@ -151,7 +164,8 @@ export function StatsDashboard(props: StatsDashboardProps): React.JSX.Element {
         <StatMetricCard
           title="Активность"
           value={stats.totalInteractions}
-          sparklineData={messagePoints}
+          sparklineData={activitySplitMode === 'total' ? messagePoints : undefined}
+          multiLineData={activityMultiLine}
           subtitle={activitySubtitle}
           trend={weeklyMessages > 0 ? 'up' : 'neutral'}
           gradientId="msgActivity"
@@ -165,6 +179,7 @@ export function StatsDashboard(props: StatsDashboardProps): React.JSX.Element {
               <ActivityGranularitySelector value={msgGranularity} onChange={setMsgGranularity} />
               <ChartModeToggle value={activityMode} onChange={setActivityMode} />
               <ChartTypeToggle value={activityChartType} onChange={setActivityChartType} />
+              <ActivitySplitToggle value={activitySplitMode} onChange={setActivitySplitMode} />
             </div>
           }
         />
@@ -179,6 +194,7 @@ export function StatsDashboard(props: StatsDashboardProps): React.JSX.Element {
         <StatDonutCard
           title="Источники трафика"
           items={sourceItems}
+          maxItems={null}
           onItemClick={onSourceClick}
         />
       </div>

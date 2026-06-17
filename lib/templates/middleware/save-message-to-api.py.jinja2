@@ -4,19 +4,23 @@
 #}
 
 # Функция для сохранения сообщений в базу данных напрямую (без API)
-async def save_message_to_api(user_id: str, message_type: str, message_text: str = None, node_id: str = None, message_data: dict = None):
+async def save_message_to_api(user_id: str, message_type: str, message_text: str = None, node_id: str = None, message_data: dict = None, chat_type: str = 'private', chat_id: str = None):
     """Сохраняет сообщение в базу данных напрямую через asyncpg.
     После успешного сохранения публикует событие в Redis канал bot:message:{PROJECT_ID}:{TOKEN_ID}.
+
+    @param chat_type - Тип чата: 'private', 'group', 'supergroup', 'channel'
+    @param chat_id - Идентификатор группового чата (None для личных сообщений)
     """
     if not db_pool:
         return None
     try:
         async with db_pool.acquire() as conn:
             message_data_json = json.dumps(message_data or {}, ensure_ascii=False)
+            tg_message_id = (message_data or {}).get("message_id")
             result = await conn.fetchrow(
                 """
-                INSERT INTO bot_messages (project_id, token_id, user_id, message_type, message_text, node_id, message_data, created_at)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                INSERT INTO bot_messages (project_id, token_id, user_id, message_type, message_text, node_id, message_data, telegram_message_id, chat_type, chat_id, created_at)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
                 RETURNING id, user_id, message_type, created_at
                 """,
                 PROJECT_ID,
@@ -25,11 +29,14 @@ async def save_message_to_api(user_id: str, message_type: str, message_text: str
                 message_type,
                 message_text,
                 node_id,
-                message_data_json
+                message_data_json,
+                tg_message_id,
+                chat_type,
+                chat_id,
             )
-            tg_message_id = (message_data or {}).get("message_id")
             tg_mid_str = f", tg_message_id={tg_message_id}" if tg_message_id else ""
-            logging.info(f"✅ Сообщение сохранено в БД: {message_type} от {user_id} (id={result['id']}{tg_mid_str})")
+            chat_str = f", chat_type={chat_type}" + (f", chat_id={chat_id}" if chat_id else "")
+            logging.info(f"✅ Сообщение сохранено в БД: {message_type} от {user_id} (id={result['id']}{tg_mid_str}{chat_str})")
 
             # Публикуем событие в Redis для мгновенного уведомления UI (fire-and-forget)
             if _redis_client:
@@ -42,6 +49,8 @@ async def save_message_to_api(user_id: str, message_type: str, message_text: str
                         "nodeId": node_id,
                         "id": result['id'],
                         "createdAt": result['created_at'].isoformat() if result['created_at'] else None,
+                        "chatId": chat_id,
+                        "chatType": chat_type,
                     }, ensure_ascii=False)
                     await _redis_client.publish(
                         f"bot:message:{PROJECT_ID}:{TOKEN_ID}",
@@ -59,7 +68,7 @@ async def save_message_to_api(user_id: str, message_type: str, message_text: str
     return None
 
 
-def _fire_save_message(user_id: str, message_type: str, message_text: str = None, node_id: str = None, message_data: dict = None):
+def _fire_save_message(user_id: str, message_type: str, message_text: str = None, node_id: str = None, message_data: dict = None, chat_type: str = 'private', chat_id: str = None):
     """Запускает save_message_to_api в фоне (fire-and-forget).
     Не блокирует выполнение — сообщение сохраняется асинхронно.
     После сохранения в БД автоматически публикует событие в Redis.
@@ -69,6 +78,8 @@ def _fire_save_message(user_id: str, message_type: str, message_text: str = None
     @param message_text - Текст сообщения (опционально)
     @param node_id - Идентификатор узла сценария (опционально)
     @param message_data - Дополнительные данные сообщения (опционально)
+    @param chat_type - Тип чата: 'private', 'group', 'supergroup', 'channel'
+    @param chat_id - Идентификатор группового чата (None для личных сообщений)
     """
     try:
         asyncio.create_task(save_message_to_api(
@@ -77,6 +88,8 @@ def _fire_save_message(user_id: str, message_type: str, message_text: str = None
             message_text=message_text,
             node_id=node_id,
             message_data=message_data,
+            chat_type=chat_type,
+            chat_id=chat_id,
         ))
     except Exception as e:
         logging.warning(f"⚠️ _fire_save_message: не удалось создать задачу: {e}")

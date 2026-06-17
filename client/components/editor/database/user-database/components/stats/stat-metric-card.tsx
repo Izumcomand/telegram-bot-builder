@@ -52,6 +52,8 @@ export interface StatMetricCardProps {
    * По умолчанию false — заголовок и переключатели в одной строке.
    */
   stackHeader?: boolean;
+  /** Дополнительная подпись под числом (не зависит от тренда) */
+  secondarySubtitle?: string;
 }
 
 /**
@@ -110,6 +112,7 @@ export function StatMetricCard(props: StatMetricCardProps): React.JSX.Element {
     chartHeight,
     chartType,
     stackHeader,
+    secondarySubtitle,
   } = props;
   const fmt = formatValue ?? defaultFormat;
   const displayValue = value !== undefined ? fmt(value) : '—';
@@ -129,7 +132,7 @@ export function StatMetricCard(props: StatMetricCardProps): React.JSX.Element {
               <span className="text-sm font-medium text-foreground truncate">{title}</span>
               <TrendIcon trend={trend} subtitle={subtitle} />
             </div>
-            <span className="text-2xl font-bold text-foreground tabular-nums leading-none shrink-0">
+            <span className="text-xl sm:text-2xl font-bold text-foreground tabular-nums leading-none shrink-0">
               {displayValue}
             </span>
           </div>
@@ -138,23 +141,30 @@ export function StatMetricCard(props: StatMetricCardProps): React.JSX.Element {
           )}
         </>
       ) : (
-        /* Обычный режим: заголовок + переключатели в одной строке */
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-sm font-medium text-foreground truncate">{title}</span>
-            <TrendIcon trend={trend} subtitle={subtitle} />
+        /* Обычный режим: заголовок сверху, переключатели переносятся при нехватке места */
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm font-medium text-foreground truncate">{title}</span>
+              <TrendIcon trend={trend} subtitle={subtitle} />
+            </div>
+            {headerExtra && (
+              <div className="flex flex-wrap items-center gap-1">{headerExtra}</div>
+            )}
           </div>
-          {headerExtra && (
-            <div className="flex items-center gap-1 shrink-0">{headerExtra}</div>
-          )}
         </div>
       )}
 
       {/* Большое числовое значение (только в обычном режиме) */}
       {!stackHeader && (
-        <span className="text-2xl font-bold text-foreground tabular-nums leading-none">
-          {displayValue}
-        </span>
+        <div className="flex items-baseline gap-2">
+          <span className="text-xl sm:text-2xl font-bold text-foreground tabular-nums leading-none">
+            {displayValue}
+          </span>
+          {secondarySubtitle && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{secondarySubtitle}</span>
+          )}
+        </div>
       )}
 
       {/* График на всю ширину карточки */}

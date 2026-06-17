@@ -2,7 +2,7 @@
  * @fileoverview Схема базы данных, сгенерированная Drizzle ORM
  * @module migrations/schema
  */
-import { pgTable, foreignKey, serial, integer, text, timestamp, bigint, jsonb, unique, index } from "drizzle-orm/pg-core"
+import { pgTable, foreignKey, serial, integer, text, timestamp, bigint, jsonb, unique, index, uniqueIndex } from "drizzle-orm/pg-core"
 import { sql } from "drizzle-orm"
 
 
@@ -120,6 +120,12 @@ export const botMessages = pgTable("bot_messages", {
 	messageData: jsonb("message_data"),
 	nodeId: text("node_id"),
 	primaryMediaId: integer("primary_media_id"),
+	/** ID сообщения в Telegram (для удаления/редактирования через Telegram API) */
+	telegramMessageId: integer("telegram_message_id"),
+	/** Тип чата: 'private', 'group', 'supergroup', 'channel' */
+	chatType: text("chat_type").default('private'),
+	/** ID чата в Telegram (для групп отличается от user_id) */
+	chatId: text("chat_id"),
 	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
 }, (table) => [
 	foreignKey({
@@ -208,42 +214,6 @@ export const groupMembers = pgTable("group_members", {
 		}).onDelete("cascade"),
 ]);
 
-export const userBotData = pgTable("user_bot_data", {
-	id: serial().primaryKey().notNull(),
-	projectId: integer("project_id").notNull(),
-	userId: text("user_id").notNull(),
-	userName: text("user_name"),
-	firstName: text("first_name"),
-	lastName: text("last_name"),
-	languageCode: text("language_code"),
-	isBot: integer("is_bot").default(0),
-	isPremium: integer("is_premium").default(0),
-	lastInteraction: timestamp("last_interaction", { mode: 'string' }).defaultNow(),
-	interactionCount: integer("interaction_count").default(0),
-	userData: jsonb("user_data").default({}),
-	currentState: text("current_state"),
-	preferences: jsonb().default({}),
-	commandsUsed: jsonb("commands_used").default({}),
-	sessionsCount: integer("sessions_count").default(1),
-	totalMessagesSent: integer("total_messages_sent").default(0),
-	totalMessagesReceived: integer("total_messages_received").default(0),
-	deviceInfo: text("device_info"),
-	locationData: jsonb("location_data"),
-	contactData: jsonb("contact_data"),
-	isBlocked: integer("is_blocked").default(0),
-	isActive: integer("is_active").default(1),
-	tags: text().array().default([""]),
-	notes: text(),
-	createdAt: timestamp("created_at", { mode: 'string' }).defaultNow(),
-	updatedAt: timestamp("updated_at", { mode: 'string' }).defaultNow(),
-}, (table) => [
-	foreignKey({
-			columns: [table.projectId],
-			foreignColumns: [botProjects.id],
-			name: "user_bot_data_project_id_bot_projects_id_fk"
-		}).onDelete("cascade"),
-]);
-
 export const userTelegramSettings = pgTable("user_telegram_settings", {
 	id: serial().primaryKey().notNull(),
 	userId: text("user_id").notNull(),
@@ -289,6 +259,9 @@ export const botGroups = pgTable("bot_groups", {
 			foreignColumns: [botProjects.id],
 			name: "bot_groups_project_id_bot_projects_id_fk"
 		}).onDelete("cascade"),
+	uniqueIndex("bot_groups_project_group_uniq")
+		.on(table.projectId, table.groupId)
+		.where(sql`group_id IS NOT NULL`),
 ]);
 
 export const mediaFiles = pgTable("media_files", {

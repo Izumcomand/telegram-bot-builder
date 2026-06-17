@@ -72,15 +72,50 @@ export async function getTelegramFileHandler(req: Request, res: Response): Promi
     }
 
     // Пробрасываем заголовки от Telegram CDN клиенту
-    const contentType = fileResp.headers.get("content-type") || "application/octet-stream";
+    let contentType = fileResp.headers.get("content-type") || "application/octet-stream";
     const contentLength = fileResp.headers.get("content-length");
     const contentRange = fileResp.headers.get("content-range");
     const acceptRanges = fileResp.headers.get("accept-ranges") || "bytes";
+
+    // Определяем имя файла из query-параметра или file_path
+    const filePath = fileData.result.file_path as string;
+    let fileName = (req.query.fileName as string) || filePath.split('/').pop() || 'file';
+
+    // Если Telegram отдаёт generic content-type — определяем из file_path
+    if (contentType === "application/octet-stream") {
+      const dir = filePath.split('/')[0];
+      const ctMap: Record<string, string> = {
+        'photos': 'image/jpeg', 'videos': 'video/mp4', 'animations': 'video/mp4',
+        'voice': 'audio/ogg', 'video_notes': 'video/mp4', 'stickers': 'image/webp',
+        'music': 'audio/mpeg',
+      };
+      if (ctMap[dir]) contentType = ctMap[dir];
+    }
+
+    // Если имя файла не содержит расширения — добавляем из content-type или file_path
+    if (!fileName.includes('.')) {
+      const extMap: Record<string, string> = {
+        'image/jpeg': '.jpg', 'image/png': '.png', 'image/gif': '.gif', 'image/webp': '.webp',
+        'video/mp4': '.mp4', 'video/webm': '.webm',
+        'audio/mpeg': '.mp3', 'audio/ogg': '.ogg', 'audio/mp4': '.m4a',
+        'application/pdf': '.pdf', 'application/zip': '.zip',
+      };
+      // Определяем расширение из директории file_path (photos/ → .jpg, videos/ → .mp4)
+      const dirMap: Record<string, string> = {
+        'photos': '.jpg', 'videos': '.mp4', 'animations': '.mp4',
+        'voice': '.ogg', 'video_notes': '.mp4', 'stickers': '.webp',
+        'documents': '', 'music': '.mp3',
+      };
+      const dir = filePath.split('/')[0];
+      const ext = extMap[contentType] || dirMap[dir] || '';
+      fileName += ext;
+    }
 
     res.status(fileResp.status);
     res.set("Content-Type", contentType);
     res.set("Accept-Ranges", acceptRanges);
     res.set("Cache-Control", "public, max-age=86400");
+    res.set("Content-Disposition", `inline; filename="${encodeURIComponent(fileName)}"`);
 
     if (contentLength) res.set("Content-Length", contentLength);
     if (contentRange) res.set("Content-Range", contentRange);

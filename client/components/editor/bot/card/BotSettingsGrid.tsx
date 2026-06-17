@@ -21,6 +21,7 @@ import { BotAdminIds } from '../profile/BotAdminIds';
 import { ProjectCollaborators } from '../profile/ProjectCollaborators';
 import { BotLaunchHistory } from './BotLaunchHistory';
 import { BotLaunchSettings } from './BotLaunchSettings';
+import { BotUserbotSettings } from './BotUserbotSettings';
 import type { BotStatusResponse } from '../bot-types';
 import type { BotToken } from '@shared/schema';
 
@@ -43,7 +44,7 @@ interface BotSettingsGridProps {
   /** Статусы всех ботов */
   allBotStatuses: BotStatusResponse[];
   /** Данные токена для настроек автоперезапуска */
-  token: Pick<BotToken, 'id' | 'autoRestart' | 'maxRestartAttempts' | 'logLevel' | 'protectContent' | 'saveIncomingMedia'>;
+  token: Pick<BotToken, 'id' | 'autoRestart' | 'maxRestartAttempts' | 'logLevel' | 'protectContent' | 'saveIncomingMedia' | 'userbotEnabled' | 'userbotApiId' | 'userbotApiHash' | 'userbotSessionString'>;
   /** Мутация переключения базы данных */
   toggleDatabaseMutation: {
     /** Флаг ожидания ответа */
@@ -57,6 +58,8 @@ interface BotSettingsGridProps {
   webhookBaseUrl: string | null;
   /** Секретный токен webhook */
   webhookSecretToken: string | null;
+  /** Колбэк для добавления изменения в pending */
+  onPendingChange?: (key: string, value: string) => void;
 }
 
 /**
@@ -78,11 +81,12 @@ export function BotSettingsGrid({
   webhookBaseUrl,
   webhookSecretToken,
   canManage,
+  onPendingChange,
 }: BotSettingsGridProps) {
   const resolvedBotName = botName ?? `Бот ${tokenId}`;
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
       <BotLaunchSettings
         tokenId={tokenId}
         projectId={projectId}
@@ -90,34 +94,43 @@ export function BotSettingsGrid({
         webhookBaseUrl={webhookBaseUrl}
         webhookSecretToken={webhookSecretToken}
         className="sm:col-span-2"
+        onPendingChange={onPendingChange}
       />
       <BotDatabaseToggle
         projectId={projectId}
         tokenId={tokenId}
         userDatabaseEnabled={userDatabaseEnabled}
         toggleDatabaseMutation={toggleDatabaseMutation}
+        onPendingChange={onPendingChange}
       />
       <BotAutoRestartToggle
         projectId={projectId}
         tokenId={tokenId}
         autoRestart={token.autoRestart}
         maxRestartAttempts={token.maxRestartAttempts}
+        onPendingChange={onPendingChange ? (ar, ma) => {
+          onPendingChange('AUTO_RESTART', ar);
+          onPendingChange('MAX_RESTART_ATTEMPTS', ma);
+        } : undefined}
       />
       <BotLogLevelSelect
         projectId={projectId}
         tokenId={tokenId}
         logLevel={token.logLevel ?? 'WARNING'}
+        onPendingChange={onPendingChange}
       />
       <BotProtectContentToggle
         projectId={projectId}
         tokenId={tokenId}
         protectContent={token.protectContent ?? 0}
+        onPendingChange={onPendingChange}
       />
       <BotSaveMediaToggle
         projectId={projectId}
         tokenId={tokenId}
         saveIncomingMedia={token.saveIncomingMedia ?? 0}
         userDatabaseEnabled={userDatabaseEnabled}
+        onPendingChange={onPendingChange}
       />
       {isBotRunning && (
         <BotExecutionTimer
@@ -126,12 +139,21 @@ export function BotSettingsGrid({
           allBotStatuses={allBotStatuses}
         />
       )}
-      <BotAdminIds projectId={projectId} />
+      <BotAdminIds projectId={projectId} onPendingChange={onPendingChange} />
       <ProjectCollaborators projectId={projectId} canManage={canManage} />
       <BotLaunchHistory
         tokenId={tokenId}
         projectId={projectId}
         botName={resolvedBotName}
+      />
+      <BotUserbotSettings
+        projectId={projectId}
+        tokenId={tokenId}
+        userbotEnabled={token.userbotEnabled ?? 0}
+        userbotApiId={token.userbotApiId ?? null}
+        userbotApiHash={token.userbotApiHash ?? null}
+        userbotSessionString={token.userbotSessionString ?? null}
+        onPendingChange={onPendingChange}
       />
     </div>
   );

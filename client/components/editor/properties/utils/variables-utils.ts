@@ -7,6 +7,60 @@
 import { Node } from '@shared/schema';
 import { SYSTEM_VARIABLES } from '../components/variables/system-variables';
 
+/** Суффикс метаданных медиа для извлечения переменных */
+interface MediaMetaSuffix {
+  /** Суффикс переменной */
+  suffix: string;
+  /** Описание на русском */
+  description: string;
+}
+
+/** Карта суффиксов метаданных по типу медиа */
+const MEDIA_META_SUFFIXES_MAP: Record<string, MediaMetaSuffix[]> = {
+  video: [
+    { suffix: 'file_id', description: 'Telegram file_id' },
+    { suffix: 'file_unique_id', description: 'Уникальный ID файла' },
+    { suffix: 'thumbnail', description: 'Обложка (file_id)' },
+    { suffix: 'duration', description: 'Длительность (сек)' },
+    { suffix: 'file_size', description: 'Размер файла (байт)' },
+    { suffix: 'file_name', description: 'Имя файла' },
+    { suffix: 'width', description: 'Ширина (px)' },
+    { suffix: 'height', description: 'Высота (px)' },
+    { suffix: 'mime_type', description: 'MIME тип' },
+  ],
+  photo: [
+    { suffix: 'file_id', description: 'Telegram file_id (макс. размер)' },
+    { suffix: 'file_unique_id', description: 'Уникальный ID файла' },
+    { suffix: 'file_size', description: 'Размер файла (байт)' },
+    { suffix: 'width', description: 'Ширина (px)' },
+    { suffix: 'height', description: 'Высота (px)' },
+    { suffix: 'small_file_id', description: 'file_id миниатюры (мин. размер)' },
+    { suffix: 'small_width', description: 'Ширина миниатюры (px)' },
+    { suffix: 'small_height', description: 'Высота миниатюры (px)' },
+    { suffix: 'sizes_count', description: 'Количество размеров' },
+    { suffix: 'all_sizes', description: 'JSON всех размеров [{file_id, w, h, size}]' },
+  ],
+  audio: [
+    { suffix: 'file_id', description: 'Telegram file_id' },
+    { suffix: 'file_unique_id', description: 'Уникальный ID файла' },
+    { suffix: 'thumbnail', description: 'Обложка (file_id)' },
+    { suffix: 'duration', description: 'Длительность (сек)' },
+    { suffix: 'file_size', description: 'Размер файла (байт)' },
+    { suffix: 'file_name', description: 'Имя файла' },
+    { suffix: 'title', description: 'Название трека' },
+    { suffix: 'performer', description: 'Исполнитель' },
+    { suffix: 'mime_type', description: 'MIME тип' },
+  ],
+  document: [
+    { suffix: 'file_id', description: 'Telegram file_id' },
+    { suffix: 'file_unique_id', description: 'Уникальный ID файла' },
+    { suffix: 'thumbnail', description: 'Обложка (file_id)' },
+    { suffix: 'file_name', description: 'Имя файла' },
+    { suffix: 'file_size', description: 'Размер файла (байт)' },
+    { suffix: 'mime_type', description: 'MIME тип' },
+  ],
+};
+
 /** Переменная проекта */
 export interface ProjectVariable {
   name: string;
@@ -17,6 +71,14 @@ export interface ProjectVariable {
   sourceTable?: string;
   /** Все узлы, где используется эта переменная */
   nodeIds?: string[];
+}
+
+/** Таблица проекта для селектора переменных */
+export interface BotTableForVariables {
+  /** Имя таблицы */
+  name: string;
+  /** Колонки таблицы */
+  columns: Array<{ id: number; name: string }>;
 }
 
 /** Результат извлечения переменных */
@@ -56,9 +118,10 @@ export function collectAvailableQuestions(allNodes: Node[]): ProjectVariable[] {
 /**
  * Извлекает и разделяет переменные на текстовые и медиа.
  * @param {Node[]} allNodes - Все узлы проекта
+ * @param {BotTableForVariables[]} botTables - Таблицы проекта (опционально)
  * @returns {VariablesResult} Объект с текстовыми и медиа переменными
  */
-export function extractVariables(allNodes: Node[]): VariablesResult {
+export function extractVariables(allNodes: Node[], botTables?: BotTableForVariables[]): VariablesResult {
   const variablesMap = new Map<string, ProjectVariable>();
   allNodes.forEach(node => {
     if (node.data.collectUserInput && node.data.inputVariable && !variablesMap.has(node.data.inputVariable)) {
@@ -413,6 +476,38 @@ export function extractVariables(allNodes: Node[]): VariablesResult {
     }
   });
 
+  // Добавляем переменные от bot_table-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'bot_table') return;
+    const data = node.data as any;
+    if (!data.saveResultTo?.trim()) return;
+    const key = `bot_table__${node.id}`;
+    if (!variablesMap.has(key)) {
+      variablesMap.set(key, {
+        name: data.saveResultTo,
+        nodeId: node.id,
+        nodeType: 'bot_table' as any,
+        sourceTable: 'bot_users',
+        description: `Результат таблицы "${data.tableName || '?'}" (${data.operation || 'read'})`,
+      });
+    }
+  });
+
+  // Добавляем переменные от schedule_trigger нод
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'schedule_trigger') return;
+    const key = `schedule_trigger__${node.id}`;
+    if (!variablesMap.has(key)) {
+      variablesMap.set(key, {
+        name: '_schedule',
+        nodeId: node.id,
+        nodeType: 'schedule_trigger' as any,
+        sourceTable: 'bot_users',
+        description: 'Метаданные расписания (timestamp, runCount, nodeId)',
+      });
+    }
+  });
+
   // Добавляем системные переменные
   SYSTEM_VARIABLES.forEach(v => { 
     if (!variablesMap.has(v.name)) {
@@ -425,6 +520,162 @@ export function extractVariables(allNodes: Node[]): VariablesResult {
       });
     }
   });
+  // Добавляем переменные из пользовательских таблиц проекта (bot_tables)
+  if (botTables && botTables.length > 0) {
+    botTables.forEach(table => {
+      table.columns.forEach(column => {
+        const varName = `table.${table.name}.${column.name}`;
+        if (!variablesMap.has(varName)) {
+          variablesMap.set(varName, {
+            name: varName,
+            nodeId: 'table',
+            nodeType: 'table' as any,
+            description: `Таблица: ${table.name}`,
+            sourceTable: 'bot_tables',
+          });
+        }
+      });
+    });
+  }
+
+  // Добавляем переменные от userbot_click_button-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'userbot_click_button') return;
+    const data = node.data as any;
+    const fields = [
+      { field: 'saveAlertTo', desc: 'Alert после нажатия кнопки' },
+      { field: 'saveResultTo', desc: 'Текст сообщения после нажатия' },
+      { field: 'saveButtonsTo', desc: 'Кнопки после нажатия (JSON)' },
+      { field: 'saveHasMediaTo', desc: 'Наличие медиа (true/false)' },
+      { field: 'saveMediaTo', desc: 'Медиа-объект (для пересылки)' },
+    ];
+    for (const { field, desc } of fields) {
+      if (!data[field]?.trim()) continue;
+      const key = `ub_click_${field}__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data[field],
+          nodeId: node.id,
+          nodeType: 'userbot_click_button' as any,
+          description: desc,
+        });
+      }
+    }
+  });
+
+  // Добавляем переменные от userbot_message-узлов (saveMessageIdTo, saveResponseIdTo)
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'userbot_message') return;
+    const data = node.data as any;
+    if (data.saveMessageIdTo?.trim()) {
+      const key = `ub_msg_id__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data.saveMessageIdTo,
+          nodeId: node.id,
+          nodeType: 'userbot_message' as any,
+          description: 'ID сообщения от юзербота',
+        });
+      }
+    }
+    if (data.saveResponseIdTo?.trim()) {
+      const key = `ub_resp_id__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data.saveResponseIdTo,
+          nodeId: node.id,
+          nodeType: 'userbot_message' as any,
+          description: 'ID ответа от получателя',
+        });
+      }
+    }
+    if (data.saveButtonsTo?.trim()) {
+      const key = `ub_msg_buttons__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data.saveButtonsTo,
+          nodeId: node.id,
+          nodeType: 'userbot_message' as any,
+          description: 'Кнопки ответа (JSON)',
+        });
+      }
+    }
+  });
+
+  // Добавляем переменные от userbot_inline_query-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'userbot_inline_query') return;
+    const data = node.data as any;
+    const fields = [
+      { field: 'saveResultTitleTo', desc: 'Title inline-результата' },
+      { field: 'saveResultDescTo', desc: 'Description inline-результата' },
+      { field: 'saveResponseIdTo', desc: 'ID отправленного inline-сообщения' },
+    ];
+    for (const { field, desc } of fields) {
+      if (!data[field]?.trim()) continue;
+      const key = `ub_inline_${field}__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data[field],
+          nodeId: node.id,
+          nodeType: 'userbot_inline_query' as any,
+          description: desc,
+        });
+      }
+    }
+  });
+
+  // Добавляем переменные от userbot_edit_trigger-узлов
+  allNodes.forEach(node => {
+    if ((node.type as string) !== 'userbot_edit_trigger') return;
+    const data = node.data as any;
+    const fields = [
+      { field: 'saveTextTo', desc: 'Текст отредактированного сообщения' },
+      { field: 'saveMessageIdTo', desc: 'ID отредактированного сообщения' },
+      { field: 'saveChatIdTo', desc: 'ID чата (редактирование)' },
+      { field: 'saveSenderIdTo', desc: 'ID отправителя (редактирование)' },
+    ];
+    for (const { field, desc } of fields) {
+      if (!data[field]?.trim()) continue;
+      const key = `ub_edit_${field}__${node.id}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: data[field],
+          nodeId: node.id,
+          nodeType: 'userbot_edit_trigger' as any,
+          description: desc,
+        });
+      }
+    }
+  });
+
+  // Добавляем переменные метаданных медиа от input-узлов с saveMediaMetadata
+  allNodes.forEach(node => {
+    if (node.type !== 'input') return;
+    const data = node.data as any;
+    if (!data.saveMediaMetadata || !data.inputVariable) return;
+    const mediaType = data.inputType as string;
+    const suffixes = MEDIA_META_SUFFIXES_MAP[mediaType];
+    if (!suffixes) return;
+    const enabledList: string[] = data.mediaMetadataSuffixes || [];
+    const customNames: Record<string, string> = data.mediaMetadataCustomNames || {};
+    for (const { suffix, description } of suffixes) {
+      // Если список включённых пуст — показываем все, иначе только выбранные
+      if (enabledList.length > 0 && !enabledList.includes(suffix)) continue;
+      const key = `media_meta__${node.id}__${suffix}`;
+      const varName = customNames[suffix] || `${data.inputVariable}_${suffix}`;
+      if (!variablesMap.has(key)) {
+        variablesMap.set(key, {
+          name: varName,
+          nodeId: node.id,
+          nodeType: 'media_meta' as any,
+          sourceTable: 'bot_users',
+          description,
+        });
+      }
+    }
+  });
+
   // Разделяем на текстовые и медиа
   const all = Array.from(variablesMap.values());
   return { textVariables: all.filter(v => !v.mediaType), mediaVariables: all.filter(v => v.mediaType) };

@@ -16,8 +16,8 @@ import {
   groupMembers,
   mediaFiles,
   telegramUsers,
-  userBotData,
   projectCollaborators,
+  botEnvVariables,
 } from "@shared/schema";
 
 /** Тип вставки проекта бота по таблице Drizzle */
@@ -59,11 +59,8 @@ export type StorageGroupMemberInput = typeof groupMembers.$inferInsert;
 /** Тип обновления участника группы */
 export type StorageGroupMemberUpdate = Partial<StorageGroupMemberInput>;
 
-/** Тип вставки пользовательских данных бота по таблице Drizzle */
-export type StorageUserBotDataInput = typeof userBotData.$inferInsert;
-
-/** Тип обновления пользовательских данных бота */
-export type StorageUserBotDataUpdate = Partial<StorageUserBotDataInput>;
+/** Тип вставки Telegram-пользователя по таблице Drizzle */
+export type StorageTelegramUserInput = typeof telegramUsers.$inferInsert;
 
 /** Тип вставки сообщения бота по таблице Drizzle */
 export type StorageBotMessageInput = typeof botMessages.$inferInsert;
@@ -86,9 +83,6 @@ export type StorageBotLaunchHistoryInput = typeof botLaunchHistory.$inferInsert;
 /** Тип обновления записи истории запуска */
 export type StorageBotLaunchHistoryUpdate = Partial<StorageBotLaunchHistoryInput>;
 
-/** Тип вставки Telegram-пользователя по таблице Drizzle */
-export type StorageTelegramUserInput = typeof telegramUsers.$inferInsert;
-
 /** Тип вставки коллаборатора проекта по таблице Drizzle */
 export type StorageProjectCollaboratorInput = typeof projectCollaborators.$inferInsert;
 
@@ -102,3 +96,34 @@ export type StorageBroadcastUpdate = Partial<StorageBroadcastInput>;
 
 /** Тип вставки результата рассылки по таблице Drizzle */
 export type StorageBroadcastResultInput = typeof broadcastResults.$inferInsert;
+
+/** Тип вставки переменной окружения бота по таблице Drizzle */
+export type StorageBotEnvVariableInput = typeof botEnvVariables.$inferInsert;
+
+/** Тип обновления переменной окружения бота */
+export type StorageBotEnvVariableUpdate = Partial<Omit<StorageBotEnvVariableInput, 'tokenId'>>;
+
+import { botTables, botTableColumns, botTableRows } from "@shared/schema";
+
+/** Тип вставки пользовательской таблицы по таблице Drizzle */
+export type StorageBotTableInput = typeof botTables.$inferInsert;
+
+/** Тип обновления пользовательской таблицы */
+export type StorageBotTableUpdate = Partial<StorageBotTableInput>;
+
+/** Тип вставки колонки пользовательской таблицы по таблице Drizzle */
+export type StorageBotTableColumnInput = typeof botTableColumns.$inferInsert;
+
+/** Тип вставки строки пользовательской таблицы по таблице Drizzle */
+export type StorageBotTableRowInput = typeof botTableRows.$inferInsert;
+
+/** Тип обновления строки пользовательской таблицы */
+export type StorageBotTableRowUpdate = Partial<StorageBotTableRowInput>;
+
+import { workerProcesses } from "@shared/schema";
+
+/** Тип вставки записи процесса воркера по таблице Drizzle */
+export type StorageWorkerProcessInput = typeof workerProcesses.$inferInsert;
+
+/** Тип обновления записи процесса воркера */
+export type StorageWorkerProcessUpdate = Partial<StorageWorkerProcessInput>;

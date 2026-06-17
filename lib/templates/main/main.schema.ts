@@ -24,12 +24,16 @@ export const mainParamsSchema = z.object({
   managedBotUpdatedTriggerMiddlewares: z.array(z.string()).optional().default([]),
   /** URL вебхука (если задан — включается webhook режим) */
   webhookUrl: z.string().nullable().optional().default(null),
+  /** Есть ли schedule_trigger ноды (для graceful shutdown) */
+  hasScheduleTrigger: z.boolean().optional().default(false),
   /** Порт aiohttp сервера для webhook режима */
   webhookPort: z.number().nullable().optional().default(null),
   /** ID токена для формирования пути вебхука */
   tokenId: z.number().nullable().optional().default(null),
   /** ID проекта для формирования пути вебхука */
   projectId: z.number().nullable().optional().default(null),
+  /** Есть ли узлы userbot_message (нужен Telethon клиент) */
+  hasUserbotNodes: z.boolean().optional().default(false),
 });
 
 /** Тип параметров запуска (выведен из схемы) */

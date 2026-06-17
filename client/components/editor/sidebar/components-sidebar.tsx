@@ -195,15 +195,16 @@ export function ComponentsSidebar({
 
   const handleDeleteProject = (projectId: number) => {
     const project = projects.find(p => p.id === projectId);
-    if (project && confirm(`Вы уверены, что хотите удалить проект "${project.name}"? Это действие нельзя отменить.`)) {
-      // Если удаляем активный проект — переключаемся на соседний
-      if (currentProjectId === projectId && onProjectSelect) {
-        const idx = projects.findIndex(p => p.id === projectId);
-        const next = projects[idx + 1] ?? projects[idx - 1];
-        if (next) onProjectSelect(next.id);
+    if (!project) return;
+    // Если удаляем активный проект — переключаемся на соседний после удаления
+    if (currentProjectId === projectId && onProjectSelect) {
+      const remaining = projects.filter(p => p.id !== projectId);
+      const next = remaining[0];
+      if (next) {
+        setTimeout(() => onProjectSelect(next.id), 100);
       }
-      deleteProject(project.id);
     }
+    deleteProject(projectId);
   };
 
   // Обработчики inline редактирования листов
@@ -319,10 +320,10 @@ export function ComponentsSidebar({
         onClose={onClose}
       />
 
-      {/* Components List */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Components List — скролл-контейнер без padding-top, чтобы sticky-заголовки прилипали вплотную к табам */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-4">
         {currentTab === 'projects' && (
-          <div className="space-y-4">
+          <div className="space-y-4 pt-3">
             {/* Заголовок и кнопки управления */}
             <div className="space-y-3 mb-4">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
@@ -402,7 +403,11 @@ export function ComponentsSidebar({
                 className="space-y-3"
                 onDragLeave={() => handleContainerDragLeave(setDragOverProject, setDragOverSheet)}
               >
-                {projects.map((project: BotProject) => (
+                {[...projects].sort((a, b) => {
+                  if (a.id === currentProjectId) return -1;
+                  if (b.id === currentProjectId) return 1;
+                  return 0;
+                }).map((project: BotProject) => (
                   <ProjectCardWrapper
                     key={project.id}
                     project={project}

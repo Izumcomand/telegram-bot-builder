@@ -50,7 +50,7 @@ export function initializeTerminalWebSocket(server: HttpServer): WebSocketServer
   const wss = new WebSocketServer({ server, path: "/api/terminal" });
 
   wss.on("connection", (ws: WebSocket, request) => {
-    console.log("Новое WebSocket-соединение для терминала");
+    console.log("[Terminal WS] Новое WebSocket-соединение, URL:", request.url);
 
     // Прикрепляем Express-сессию к WS запросу чтобы получить userId
     const applySession = (): Promise<void> => new Promise((resolve, reject) => {
@@ -110,6 +110,7 @@ export function initializeTerminalWebSocket(server: HttpServer): WebSocketServer
 
     const connectionKey = `${projectId}_${tokenId}`;
     registerConnection(connectionKey, ws);
+    console.log(`[Terminal WS] Зарегистрировано соединение: key=${connectionKey}, всего соединений для ключа: ${activeConnections.get(connectionKey)?.size ?? 0}`);
 
     // Сбрасываем буфер и отправляем историю асинхронно
     (async () => {
@@ -132,6 +133,8 @@ export function initializeTerminalWebSocket(server: HttpServer): WebSocketServer
         const parsed = JSON.parse(data.toString());
         if (parsed.command === "clear") {
           console.log(`Команда очистки терминала для проекта ${projectId}, токена ${tokenId}`);
+        } else if (parsed.command === "ping") {
+          ws.send(JSON.stringify({ command: "pong" }));
         }
       } catch {
         console.warn("Некорректное сообщение от клиента:", data.toString());
@@ -153,7 +156,7 @@ export function initializeTerminalWebSocket(server: HttpServer): WebSocketServer
 }
 
 /**
- * Загружает историю логов из БД и отправляет её клиенту
+ * Загружает логи только последнего запуска из БД и отправляет клиенту
  * @param ws - WebSocket-соединение клиента
  * @param projectId - Идентификатор проекта
  * @param tokenId - Идентификатор токена
@@ -164,7 +167,7 @@ async function sendHistoryToClient(
   tokenId: number
 ): Promise<void> {
   try {
-    const logs = await storage.getBotLogs(projectId, tokenId, 500);
+    const logs = await storage.getLatestLaunchLogs(projectId, tokenId, 500);
     for (const log of logs) {
       if (ws.readyState !== WebSocket.OPEN) break;
       const message: TerminalMessage = {

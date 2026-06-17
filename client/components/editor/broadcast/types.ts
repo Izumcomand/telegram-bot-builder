@@ -9,6 +9,8 @@ export type {
   BroadcastFilters,
 } from '@shared/schema';
 
+import type { Button } from '@shared/schema';
+
 /**
  * WS-событие прогресса рассылки (broadcast-progress)
  */
@@ -57,10 +59,14 @@ export interface NewBroadcastFormData {
   messageText: string;
   /** URL прикреплённых медиафайлов */
   mediaUrls: string[];
+  /** Инлайн-кнопки сообщения рассылки */
+  buttons?: Button[];
+  /** Кол-во кнопок в ряду (0 = все в один ряд) */
+  buttonsPerRow?: number;
   /** Фильтры аудитории */
   filters: {
     /** Тип аудитории */
-    audienceType: 'all' | 'tags' | 'date' | 'activity';
+    audienceType: 'all' | 'tags' | 'date' | 'activity' | 'manual';
     /** Теги для фильтрации */
     tags?: string[];
     /** Дата регистрации от (ISO) */
@@ -71,5 +77,9 @@ export interface NewBroadcastFormData {
     activeFrom?: string;
     /** Последняя активность до (ISO) */
     activeTo?: string;
+    /** Массив userId выбранных вручную пользователей */
+    userIds?: string[];
+    /** Массив groupId (Telegram chat_id) выбранных групп */
+    groupIds?: string[];
   };
 }

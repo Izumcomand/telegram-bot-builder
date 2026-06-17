@@ -31,6 +31,8 @@ interface DesktopTableRowProps {
   onOpenUserDetailsPanel?: (user: UserBotData) => void;
   /** Открытие диалоговой панели */
   onOpenDialogPanel?: (user: UserBotData) => void;
+  /** Переход на вкладку «Диалоги» с пользователем */
+  onNavigateToDialog?: (user: UserBotData) => void;
 }
 
 /**
@@ -72,12 +74,7 @@ export function DesktopTableRow(props: DesktopTableRowProps): React.JSX.Element 
   return (
     <TableRow
       key={user.id || props.index}
-      className="border-b border-border/30 hover:bg-muted/30 transition-colors h-14 cursor-pointer"
-      onClick={() => {
-        // При клике на строку открываем обе панели с данными пользователя
-        props.onOpenUserDetailsPanel?.(user);
-        props.onOpenDialogPanel?.(user);
-      }}
+      className="border-b border-border/30 hover:bg-muted/30 transition-colors h-14"
     >
       {cellsToShow.map((cell, idx) => (
         <cell.render key={`${user.id}-${cell.key}-${idx}`} {...props} />

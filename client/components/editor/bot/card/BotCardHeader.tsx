@@ -110,17 +110,18 @@ export function BotCardHeader({
   );
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
       <div className="flex items-start justify-between sm:contents">
         <BotAvatar
           botName={displayName}
           photoUrl={projectBotInfo?.photoUrl || token.botPhotoUrl}
           botId={projectBotInfo?.id?.toString()}
           projectId={projectId}
+          tokenId={tokenId}
           size={64}
           className="flex-shrink-0"
         />
-        <div className="sm:hidden flex items-center gap-1">
+        <div className="sm:hidden flex items-center gap-1 flex-wrap">
           {CollapseButton}
           <BotActions
             isBotRunning={isBotRunning} startBotMutation={startBotMutation}
@@ -161,7 +162,16 @@ export function BotCardHeader({
             </TooltipProvider>
           )}
           {token.botUsername && (
-            <span className="text-xs sm:text-sm text-muted-foreground">@{token.botUsername}</span>
+            <a
+              href={`https://t.me/${token.botUsername}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs sm:text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 hover:underline transition-colors"
+              title="Открыть бота в Telegram"
+              data-testid="link-bot-username"
+            >
+              @{token.botUsername}
+            </a>
           )}
         </div>
         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -173,7 +183,7 @@ export function BotCardHeader({
       </div>
 
       {/* На десктопе кнопки справа */}
-      <div className="hidden sm:flex items-center gap-1">
+      <div className="hidden sm:flex items-center gap-1 flex-wrap">
         {CollapseButton}
         <BotActions
           isBotRunning={isBotRunning} startBotMutation={startBotMutation}

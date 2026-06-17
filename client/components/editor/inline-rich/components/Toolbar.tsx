@@ -4,16 +4,9 @@
  */
 
 import { Button } from '@/components/ui/button';
-import { RotateCcw, RotateCw, Copy, Plus } from 'lucide-react';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel
-} from '@/components/ui/dropdown-menu';
+import { RotateCcw, RotateCw, Copy } from 'lucide-react';
 import { cn } from '@/utils/utils';
-import { VariableMenuItem } from './variable-menu-item';
+import { VariablesMenu } from './VariablesMenu';
 import type { FormatOption } from '../format-options';
 import type { Variable } from '../types';
 
@@ -65,13 +58,13 @@ export function Toolbar({
 }: ToolbarProps) {
   if (compact) {
     return (
-      <div className="flex items-center gap-1 bg-white dark:bg-slate-900/50 rounded-lg p-1 border border-slate-200/50 dark:border-slate-800/50">
+      <div className="flex flex-wrap items-center gap-1 bg-white dark:bg-slate-900/50 rounded-lg p-1 border border-slate-200/50 dark:border-slate-800/50">
         {formatOptions.map((format) => {
           const isActive = activeFormats?.has(format.command) ?? false;
           return (
             <Button key={format.command} variant="ghost" size="icon"
               className={cn(
-                "h-7 w-7 transition-colors",
+                "h-7 w-7 transition-colors shrink-0",
                 isActive
                   ? "bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 hover:bg-blue-200/80 dark:hover:bg-blue-800/50"
                   : "hover:bg-slate-200/60 dark:hover:bg-slate-700/60"
@@ -85,19 +78,19 @@ export function Toolbar({
             </Button>
           );
         })}
-        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5" />
+        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-0.5 shrink-0" />
         <Button variant="ghost" size="icon"
-          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-40"
+          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-40 shrink-0"
           onClick={undo} disabled={!canUndo} title="Отменить (Ctrl+Z)">
           <RotateCcw className="h-3.5 w-3.5" />
         </Button>
         <Button variant="ghost" size="icon"
-          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-40"
+          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 disabled:opacity-40 shrink-0"
           onClick={redo} disabled={!canRedo} title="Повторить (Ctrl+Shift+Z)">
           <RotateCw className="h-3.5 w-3.5" />
         </Button>
         <Button variant="ghost" size="icon"
-          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60"
+          className="h-7 w-7 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 shrink-0"
           onClick={copyFormatted} title="Копировать форматированный текст">
           <Copy className="h-3.5 w-3.5" />
         </Button>
@@ -147,26 +140,10 @@ export function Toolbar({
         </Button>
       </div>
       {availableVariables.length > 0 && insertVariable && (
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm"
-              className="h-8 sm:h-9 px-2.5 sm:px-3 gap-1.5 text-xs sm:text-sm font-medium bg-gradient-to-r from-blue-500/10 to-cyan-500/10 dark:from-blue-600/20 dark:to-cyan-600/15 hover:from-blue-500/20 hover:to-cyan-500/15 border border-blue-300/40 dark:border-blue-600/40 transition-all"
-              title="Вставить переменную">
-              <Plus className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-              <span className="hidden sm:inline">Переменная</span>
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56 sm:w-64">
-            <DropdownMenuLabel className="text-xs sm:text-sm font-semibold">
-              📌 Доступные переменные
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            {availableVariables.map((variable, index) => (
-              <VariableMenuItem key={`${variable.nodeId}-${variable.name}-${index}`}
-                variable={variable} onSelect={insertVariable} />
-            ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <VariablesMenu
+          availableVariables={availableVariables}
+          insertVariable={insertVariable}
+        />
       )}
     </div>
   );

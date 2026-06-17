@@ -182,6 +182,19 @@ export function KeyboardNodeProperties({
               onLayoutChange={(layout) => onNodeUpdate(selectedNode.id, { keyboardLayout: layout })}
             />
           )}
+          {/* Перемешивание кнопок */}
+          {selectedNode.data.keyboardType === 'inline' && (buttons.length > 1 || enableDynamicButtons) && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/30 dark:border-amber-800/30">
+              <label htmlFor="shuffleButtons" className="text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer">
+                🔀 Перемешивать кнопки
+              </label>
+              <Switch
+                id="shuffleButtons"
+                checked={selectedNode.data.shuffleButtons || false}
+                onCheckedChange={(checked) => onNodeUpdate(selectedNode.id, { shuffleButtons: checked })}
+              />
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -206,6 +219,19 @@ export function KeyboardNodeProperties({
               initialLayout={selectedNode.data.keyboardLayout}
               onLayoutChange={(layout) => onNodeUpdate(selectedNode.id, { keyboardLayout: layout })}
             />
+          )}
+          {/* Перемешивание кнопок */}
+          {selectedNode.data.keyboardType === 'inline' && buttons.length > 1 && (
+            <div className="flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200/30 dark:border-amber-800/30">
+              <label htmlFor="shuffleButtons2" className="text-xs font-medium text-amber-800 dark:text-amber-200 cursor-pointer">
+                🔀 Перемешивать кнопки
+              </label>
+              <Switch
+                id="shuffleButtons2"
+                checked={selectedNode.data.shuffleButtons || false}
+                onCheckedChange={(checked) => onNodeUpdate(selectedNode.id, { shuffleButtons: checked })}
+              />
+            </div>
           )}
         </>
       )}

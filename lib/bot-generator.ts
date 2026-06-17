@@ -27,7 +27,9 @@ import { generateButtonResponse, generateMultiSelectCallback, generateMultiSelec
 import { generateInteractiveCallbackHandlers } from './templates/keyboard-handlers/interactive-callback-handlers';
 import { generateGroupHandlers } from './templates/group-handlers/group-handlers.renderer';
 import { generateMediaFunctions } from './templates/media-functions/media-functions.renderer';
+import { generateContentCode } from './templates/content';
 import { generateMediaInputHandlers } from './templates/media-input-handlers';
+import type { MediaMetadataConfig } from './templates/media-input-handlers';
 import { generateMessageLoggingCode } from './templates/middleware/middleware.renderer';
 import type { NodeItem } from './templates/handle-user-input/handle-user-input.params';
 import { generateDockerfile, generateReadme, generateRequirementsTxt, generateEnvFile } from './scaffolding';
@@ -57,6 +59,30 @@ function collectCommandSourceNodes(nodes: Node[], menuOnly: boolean = false): No
   nodes.filter(node => node.type === 'command_trigger' && node.data?.command).forEach(push);
 
   return result;
+}
+
+/**
+ * Собирает конфигурации метаданных медиа из input-нод с saveMediaMetadata=true
+ * @param nodes - Все узлы проекта
+ * @returns Массив конфигураций для передачи в шаблон
+ */
+function collectMediaMetadataConfigs(nodes: Node[]): MediaMetadataConfig[] {
+  const configs: MediaMetadataConfig[] = [];
+  for (const node of nodes) {
+    if (node.type !== 'input') continue;
+    const data = node.data as any;
+    if (!data.saveMediaMetadata) continue;
+    const mediaType = data.inputType as string;
+    if (!['photo', 'video', 'audio', 'document'].includes(mediaType)) continue;
+    const baseVariable = data.inputVariable || `user_${mediaType}`;
+    configs.push({
+      mediaType,
+      baseVariable,
+      enabledSuffixes: data.mediaMetadataSuffixes || [],
+      customNames: data.mediaMetadataCustomNames || {},
+    });
+  }
+  return configs;
 }
 
 function hasSkipDataCollectionButtonsInProject(nodes: Node[]): boolean {
@@ -142,6 +168,7 @@ interface CodeSections {
   databaseCode: string;
   utils: string;
   mediaFunctions: string;
+  contentCode: string;
   nodeHandlers: string;
   interactiveCallbackHandlers: string;
   replyButtonHandlers: string;
@@ -233,6 +260,7 @@ function generateCodeSections(
       hasLocalMediaFiles: flags.hasLocalMediaFilesResult,
       hasBotCommands: flags.hasBotCommandsResult,
       hasDeepLinkTriggers: flags.hasDeepLinkTriggersResult,
+      hasUserbotNodes: flags.hasUserbotNodesResult,
     })
   );
 
@@ -254,6 +282,7 @@ function generateCodeSections(
       projectId: context.projectId,
       webhookUrl: context.options.webhookUrl ?? null,
       webhookPort: context.options.webhookPort ?? null,
+      hasUserbotNodes: flags.hasUserbotNodesResult,
     })
   );
 
@@ -290,6 +319,13 @@ function generateCodeSections(
       : ''
   );
 
+  // --- content (загрузка из _content) ---
+  const contentCode = emitOnce(state, 'content', () =>
+    context.projectId
+      ? generateContentCode({ projectId: context.projectId, reloadIntervalSeconds: 60 })
+      : ''
+  );
+
   // --- node handlers ---
   const nodeHandlers = generateNodeHandlers(
     nodes,
@@ -297,7 +333,8 @@ function generateCodeSections(
     !!context.options.enableComments,
     context.options.telegramFileIds || {},
     context.options.thumbnailFileIds || {},
-    context.options.thumbnailUrls || {}
+    context.options.thumbnailUrls || {},
+    context.projectId ?? null,
   );
 
   // --- allReferencedNodeIds (теперь часть контекста секции) ---
@@ -436,6 +473,7 @@ function generateCodeSections(
       hasLocationInput: inputCollection.hasLocationInput,
       hasContactInput: inputCollection.hasContactInput,
       navigationCode: mediaInputNavigationCode,
+      mediaMetadataConfigs: collectMediaMetadataConfigs(nodes),
     })
   );
 
@@ -486,9 +524,11 @@ function generateCodeSections(
       groupMessageTriggerHandlers: nodes
         .filter(n => n.type === 'group_message_trigger' && n.data?.autoTransitionTo)
         .map(n => `group_message_trigger_${n.id.replace(/[^a-zA-Z0-9_]/g, '_')}_handler`),
+      hasScheduleTrigger: nodes.some(n => (n.type as string) === 'schedule_trigger' && n.data?.autoTransitionTo),
       webhookUrl: context.options.webhookUrl ?? null,
       webhookPort: context.options.webhookPort ?? null,
       projectId: context.projectId ?? null,
+      hasUserbotNodes: flags.hasUserbotNodesResult,
     })
   );
 
@@ -576,6 +616,7 @@ function generateCodeSections(
     databaseCode,
     utils,
     mediaFunctions,
+    contentCode,
     nodeHandlers,
     interactiveCallbackHandlers,
     replyButtonHandlers,
@@ -628,6 +669,7 @@ function assembleAndValidate(
     sections.databaseCode,
     sections.utils,
     sections.mediaFunctions,
+    sections.contentCode,
     sections.nodeHandlers,
     sections.interactiveCallbackHandlers,
     sections.replyButtonHandlers,

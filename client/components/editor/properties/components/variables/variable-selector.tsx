@@ -7,7 +7,7 @@
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuLabel } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { ChevronDown } from 'lucide-react';
-import { VariableMenuItem } from '../../../inline-rich/components/variable-menu-item';
+import { VariableListContent } from '../../../inline-rich/components/variable-list-content';
 import type { Variable } from '../../../inline-rich/types';
 
 /** Пропсы компонента VariableSelector */
@@ -49,19 +49,10 @@ export function VariableSelector({
           📌 Доступные переменные
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {availableVariables.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-muted-foreground text-center">
-            Нет переменных. Добавьте узел со сбором медиа-ввода.
-          </div>
-        ) : (
-          availableVariables.map((variable, index) => (
-            <VariableMenuItem
-              key={`${variable.nodeId}-${variable.name}-${index}`}
-              variable={variable}
-              onSelect={onSelect}
-            />
-          ))
-        )}
+        <VariableListContent
+          availableVariables={availableVariables}
+          onSelect={onSelect}
+        />
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,13 +1,51 @@
 /**
  * @fileoverview Компонент аватарки бота
  *
- * Отображает аватарку бота через серверный прокси.
+ * Отображает аватарку бота через серверный прокси с передачей tokenId.
+ * Кеширует неудачные загрузки (404) в sessionStorage чтобы не мигать сломанным img
+ * даже после перезагрузки страницы (сбрасывается при закрытии вкладки).
  * Fallback — инициалы или иконка бота.
  *
  * @module BotAvatar
  */
 
-import { useRef } from 'react';
+import { useState } from 'react';
+
+/** Ключ для sessionStorage */
+const STORAGE_KEY = 'bot-avatar-failed-urls';
+
+/**
+ * Проверяет, есть ли URL в кеше неудачных загрузок
+ * @param url - URL аватарки
+ * @returns true если загрузка ранее завершилась ошибкой
+ */
+function isUrlFailed(url: string): boolean {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return false;
+    const list: string[] = JSON.parse(raw);
+    return list.includes(url);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Добавляет URL в кеш неудачных загрузок
+ * @param url - URL аватарки который вернул ошибку
+ */
+function markUrlFailed(url: string): void {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    const list: string[] = raw ? JSON.parse(raw) : [];
+    if (!list.includes(url)) {
+      list.push(url);
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify(list));
+    }
+  } catch {
+    // sessionStorage недоступен — игнорируем
+  }
+}
 
 /**
  * Свойства аватарки бота
@@ -23,35 +61,44 @@ interface BotAvatarProps {
   className?: string;
   /** ID проекта для прокси аватарки */
   projectId?: number;
+  /** ID токена бота — передаётся в запрос чтобы сервер использовал правильный токен */
+  tokenId?: number;
   /** ID бота (не используется, оставлен для совместимости) */
   botId?: string;
 }
 
 /**
- * Аватарка бота — загружает через серверный прокси /api/projects/:id/users/bot/avatar
+ * Аватарка бота — загружает через серверный прокси /api/projects/:id/users/bot/avatar?tokenId=:tokenId
  * @param props - Свойства компонента
  * @returns JSX элемент
  */
-export function BotAvatar({ photoUrl, botName, size = 40, className = '', projectId }: BotAvatarProps) {
-  /** Флаг наличия фото — true если photoUrl не пустой */
+export function BotAvatar({ photoUrl, botName, size = 40, className = '', projectId, tokenId }: BotAvatarProps) {
+  /** URL прокси аватарки */
   const hasPhoto = !!photoUrl && !!projectId;
+  const proxyUrl = hasPhoto
+    ? `/api/projects/${projectId}/users/bot/avatar${tokenId ? `?tokenId=${tokenId}` : ''}`
+    : null;
 
-  /** Стабилизируем URL — не сбрасываем при рефетче */
-  const stableRef = useRef<string | null>(null);
-  const proxyUrl = hasPhoto ? `/api/projects/${projectId}/users/bot/avatar` : null;
-  if (proxyUrl) stableRef.current = proxyUrl;
-  const resolvedUrl = proxyUrl || stableRef.current;
+  /** Локальный флаг ошибки — для ре-рендера при onError */
+  const [imgError, setImgError] = useState(() => !!proxyUrl && isUrlFailed(proxyUrl));
 
-  if (resolvedUrl) {
+  /** Показываем img только если URL есть и не в кеше ошибок */
+  const showImg = proxyUrl && !isUrlFailed(proxyUrl) && !imgError;
+
+  if (showImg) {
     return (
       <div
         className={`relative rounded-full overflow-hidden flex-shrink-0 ${className}`}
         style={{ width: size, height: size }}
       >
         <img
-          src={resolvedUrl}
+          src={proxyUrl}
           alt={`${botName} avatar`}
           className="w-full h-full object-cover"
+          onError={() => {
+            markUrlFailed(proxyUrl);
+            setImgError(true);
+          }}
         />
       </div>
     );

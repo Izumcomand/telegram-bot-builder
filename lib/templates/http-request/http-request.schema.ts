@@ -14,8 +14,8 @@ export const httpRequestAuthTypeSchema = z.enum(['none', 'basic', 'bearer', 'hea
 /** Схема формата тела запроса */
 export const httpRequestBodyFormatSchema = z.enum(['json', 'form-urlencoded', 'raw']);
 
-/** Схема формата ответа: autodetect, json, text или file (бинарный файл в base64) */
-export const httpRequestResponseFormatSchema = z.enum(['autodetect', 'json', 'text', 'file']);
+/** Схема формата ответа: autodetect, json, text, file (бинарный файл в base64) или xml (XML→dict) */
+export const httpRequestResponseFormatSchema = z.enum(['autodetect', 'json', 'text', 'file', 'xml']);
 
 /** Схема параметров шаблона http_request */
 export const httpRequestParamsSchema = z.object({
@@ -61,7 +61,7 @@ export const httpRequestParamsSchema = z.object({
   queryParams: z.string().optional().default(''),
   /** Формат тела запроса */
   bodyFormat: httpRequestBodyFormatSchema.optional().default('json'),
-  /** Формат ответа: autodetect, json, text или file (base64-объект) */
+  /** Формат ответа: autodetect, json, text, file (base64-объект) или xml (XML→dict) */
   responseFormat: httpRequestResponseFormatSchema.optional().default('autodetect'),
   /** Не падать при HTTP ошибках 4xx/5xx */
   ignoreHttpErrors: z.boolean().optional().default(false),
@@ -83,6 +83,23 @@ export const httpRequestParamsSchema = z.object({
   paginationLimit: z.number().optional().default(10),
   /** Максимальное количество страниц для режима fetch_all */
   paginationMaxPages: z.number().optional().default(20),
+  /** JSON-путь для извлечения значения из ответа (поддерживает {переменные}) */
+  responseJsonPath: z.string().optional().default(''),
+  /** Переменная куда сохранить извлечённое по пути значение */
+  responseExtractTo: z.string().optional().default(''),
+  /** Включить batch-режим */
+  enableBatch: z.boolean().optional().default(false),
+  /** Переменная-источник с массивом */
+  batchSource: z.string().optional().default(''),
+  /** Имя элемента массива */
+  batchItemVar: z.string().optional().default('item'),
+  /** Переменная для массива результатов */
+  batchResultVariable: z.string().optional().default(''),
+  /** Поля результата: [{key, value}] */
+  batchResultFields: z.array(z.object({
+    key: z.string(),
+    value: z.string(),
+  })).optional().default([]),
 });
 
 /** Тип параметров шаблона http_request */

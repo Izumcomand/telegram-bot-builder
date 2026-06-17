@@ -18,6 +18,7 @@ import { ComponentsSidebar } from '@/components/editor/sidebar/components-sideba
 import { PropertiesPanel } from '@/components/editor/properties/components/main/properties-panel';
 import { Canvas } from '@/components/editor/canvas/canvas/canvas';
 import { BotLayout } from '@/components/editor/bot/panel/BotLayout';
+import { TerminalPanel } from '@/components/editor/terminal/TerminalPanel';
 import { BotControl } from '@/components/editor/bot/bot-control';
 import { migrateAllKeyboardLayouts } from './editor/utils/keyboard-migration';
 import { createActionHistoryItem } from './editor/utils/action-logger';
@@ -47,10 +48,13 @@ import { useLocation } from 'wouter';
 
 import { DialogPanel } from '@/components/editor/database/dialog/dialog-panel';
 import { UserMessagesLiveProvider } from '@/components/editor/database/user-database/contexts/user-messages-live-context';
+import { DialogsTabContent } from '@/components/editor/database/user-database/dialogs-tab/dialogs-tab-content';
 import { GroupsPanel } from '@/components/editor/groups/groups-panel';
 import { UserDatabasePanel } from '@/components/editor/database/user-database/user-database-panel';
 import { BroadcastPanel } from '@/components/editor/broadcast';
 import { AnalyticsPanel } from '@/components/editor/analytics';
+import { TablesPanel } from '@/components/editor/tables';
+import { FilesPanel } from '@/components/editor/files';
 import { UserDetailsPanel } from '@/components/editor/database/user-details/user-details-panel';
 import { UserIdsDatabase } from '@/components/editor/user-ids-db';
 import { ProjectNotFound } from '@/components/editor/project-not-found';
@@ -100,10 +104,22 @@ export default function Editor() {
   })();
 
   /**
-   * Текущая выбранная вкладка в интерфейсе редактора
+   * Текущая выбранная вкладка в интерфейсе редактора.
+   * Инициализируется из query-параметра ?tab= в URL.
    * @type {EditorTab}
    */
-  const [currentTab, setCurrentTab] = useState<EditorTab>('editor');
+  const [currentTab, setCurrentTab] = useState<EditorTab>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const tab = params.get('tab');
+    const validTabs: EditorTab[] = ['editor', 'export', 'bot', 'terminal', 'users', 'dialogs', 'broadcast', 'analytics', 'tables', 'files'];
+    if (tab && validTabs.includes(tab as EditorTab)) {
+      return tab as EditorTab;
+    }
+    return 'editor';
+  });
+
+  /** Пользователь для автоматического открытия в диалогах (при переходе из таблицы) */
+  const [pendingDialogUser, setPendingDialogUser] = useState<any>(null);
 
   /**
    * Флаг отображения модального окна сохранения сценария
@@ -124,10 +140,31 @@ export default function Editor() {
   const [] = useState(true);
 
   /**
-   * Идентификатор выбранного токена на вкладке базы пользователей
+   * Идентификатор выбранного токена на вкладке базы пользователей.
+   * Инициализируется из query-параметра ?bot= в URL.
    * @type {number|null}
    */
-  const [selectedDatabaseTokenId, setSelectedDatabaseTokenId] = useState<number | null>(null);
+  const [selectedDatabaseTokenId, setSelectedDatabaseTokenId] = useState<number | null>(() => {
+    const params = new URLSearchParams(window.location.search);
+    const bot = params.get('bot');
+    return bot ? parseInt(bot, 10) || null : null;
+  });
+
+  // Синхронизация вкладки и выбранного бота с URL query-параметрами
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (currentTab === 'editor') {
+      url.searchParams.delete('tab');
+    } else {
+      url.searchParams.set('tab', currentTab);
+    }
+    if (selectedDatabaseTokenId) {
+      url.searchParams.set('bot', String(selectedDatabaseTokenId));
+    } else {
+      url.searchParams.delete('bot');
+    }
+    window.history.replaceState(null, '', url.toString());
+  }, [currentTab, selectedDatabaseTokenId]);
 
   /**
    * Флаг использования гибкого макета
@@ -398,6 +435,11 @@ export default function Editor() {
   // Активный проект
   const activeProject = projectId ? currentProject : firstProject;
 
+  /** Сброс выбранного токена при смене проекта */
+  useEffect(() => {
+    setSelectedDatabaseTokenId(null);
+  }, [activeProject?.id]);
+
   // Загрузка пользователей для вкладки "Пользователи"
   const { data: users = [] } = useQuery<UserBotData[]>({
     queryKey: [`/api/projects/${activeProject?.id}/users`],
@@ -407,16 +449,15 @@ export default function Editor() {
   });
 
   /**
-   * Эффект для автоматического выбора первого пользователя при переключении на вкладку "Пользователи"
+   * Эффект для сброса панелей при переключении на вкладку "Пользователи"
+   * Панели открываются только по кнопке в таблице
    */
   useEffect(() => {
-    if (currentTab === 'users' && users.length > 0) {
-      const firstUser = users[0];
-      // Открываем обе панели с первым пользователем
-      handleSelectUserDetails(firstUser);
-      handleSelectDialogUser(firstUser);
+    if (currentTab === 'users') {
+      handleCloseDialogPanel();
+      handleCloseUserDetailsPanel();
     }
-  }, [currentTab, users, handleSelectUserDetails, handleSelectDialogUser]);
+  }, [currentTab]);
 
   // Использование хука генератора кода.
   // Передаём botDataWithSheets вместо activeProject?.data, чтобы генератор
@@ -760,8 +801,8 @@ export default function Editor() {
         sheetsData = projectData;
       } else {
         sheetsData = SheetsManager.migrateLegacyData(projectData as BotData);
-        // Сохраняем мигрированные данные
-        updateProjectMutation.mutate({});
+        // Автосохранение мигрированных данных — с задержкой чтобы state обновился
+        setTimeout(() => updateProjectMutation.mutate({}), 500);
       }
 
       // Миграция keyboardLayout для всех узлов
@@ -819,6 +860,16 @@ export default function Editor() {
     projectId: activeProject?.id || null
   });
 
+  // Обработчик кастомного события navigate-tab (из панели свойств)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const tab = (e as CustomEvent).detail;
+      if (tab) handleTabChange(tab);
+    };
+    window.addEventListener('navigate-tab', handler);
+    return () => window.removeEventListener('navigate-tab', handler);
+  }, [handleTabChange]);
+
   // Хук для управления операциями с листами
   const {
     handleSheetAdd,
@@ -839,7 +890,12 @@ export default function Editor() {
     currentNodeSizes,
     nodes,
     activeProjectId: activeProject?.id || null,
-    onAfterSelect: () => setFitTrigger(t => t + 1),
+    onAfterSelect: () => {
+      try {
+        if (localStorage.getItem('canvas-auto-fit-sheet') === 'false') return;
+      } catch {}
+      setFitTrigger(t => t + 1);
+    },
   });
 
   // Проверяем, есть ли выбранный сценарий при загрузке страницы
@@ -1221,7 +1277,7 @@ export default function Editor() {
       onButtonDelete={handleButtonDelete}
       onNodeAdd={addNode}
       onNodeDelete={handleNodeDelete}
-      onClose={handleToggleProperties}
+      onClose={() => { handleToggleProperties(); setShowMobileProperties(false); }}
       onActionLog={handleActionLog}
       onSaveProject={handleSaveProject}
       focusButtonId={focusButtonId}
@@ -1446,6 +1502,7 @@ export default function Editor() {
                 canvasView={canvasView}
                 onViewChange={currentTab === 'editor' ? handleViewChange : undefined}
                 projectId={activeProject?.id}
+                projects={allProjects.map((p) => ({ id: p.id, name: p.name, ownerId: p.ownerId, data: p.data }))}
               />
             </div>
           )}
@@ -1462,6 +1519,21 @@ export default function Editor() {
               <BotLayout
                 projectId={activeProject.id}
                 projectName={activeProject.name}
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(projectId) => {
+                  setLocation(`/projects/${projectId}`);
+                }}
+              />
+            </div>
+          )}
+          {currentTab === 'terminal' && (
+            <div className="h-full">
+              <TerminalPanel
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                currentProjectId={activeProject.id}
+                onProjectChange={(projectId) => {
+                  setLocation(`/projects/${projectId}`);
+                }}
               />
             </div>
           )}
@@ -1472,14 +1544,32 @@ export default function Editor() {
                 projectName={activeProject.name}
                 onOpenDialogPanel={handleOpenDialogPanel}
                 onOpenUserDetailsPanel={handleOpenUserDetailsPanel}
+                onNavigateToDialog={(user) => { setPendingDialogUser(user); handleTabChange('dialogs'); }}
                 selectedTokenId={selectedDatabaseTokenId}
                 onSelectToken={setSelectedDatabaseTokenId}
                 allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
                 onProjectChange={(projectId) => {
                   setSelectedDatabaseTokenId(null);
-                  setLocation(`/projects/${projectId}`);
-                }}
+                  setLocation(`/projects/${projectId}`);                }}
               />
+            </div>
+          )}
+          {currentTab === 'dialogs' && (
+            <div className="h-full overflow-hidden">
+              <UserMessagesLiveProvider projectId={activeProject.id}>
+                <DialogsTabContent
+                  projectId={activeProject.id}
+                  projectName={activeProject.name}
+                  selectedTokenId={selectedDatabaseTokenId}
+                  onSelectToken={setSelectedDatabaseTokenId}
+                  initialUser={pendingDialogUser}
+                  allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                  onProjectChange={(pid) => {
+                    setSelectedDatabaseTokenId(null);
+                    setLocation(`/projects/${pid}`);
+                  }}
+                />
+              </UserMessagesLiveProvider>
             </div>
           )}
           {currentTab === 'user-ids' && <UserIdsDatabase />}
@@ -1500,6 +1590,34 @@ export default function Editor() {
           {currentTab === 'analytics' && (
             <div className="h-full overflow-hidden">
               <AnalyticsPanel
+                projectId={activeProject.id}
+                selectedTokenId={selectedDatabaseTokenId}
+                onSelectToken={setSelectedDatabaseTokenId}
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(projectId) => {
+                  setSelectedDatabaseTokenId(null);
+                  setLocation(`/projects/${projectId}`);
+                }}
+              />
+            </div>
+          )}
+          {currentTab === 'tables' && (
+            <div className="h-full overflow-hidden">
+              <TablesPanel
+                projectId={activeProject.id}
+                selectedTokenId={selectedDatabaseTokenId}
+                onSelectToken={setSelectedDatabaseTokenId}
+                allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                onProjectChange={(projectId) => {
+                  setSelectedDatabaseTokenId(null);
+                  setLocation(`/projects/${projectId}`);
+                }}
+              />
+            </div>
+          )}
+          {currentTab === 'files' && (
+            <div className="h-full overflow-hidden">
+              <FilesPanel
                 projectId={activeProject.id}
                 selectedTokenId={selectedDatabaseTokenId}
                 onSelectToken={setSelectedDatabaseTokenId}
@@ -1792,6 +1910,7 @@ export default function Editor() {
                   highlightNodeId={highlightNodeId}
                   onAutoLayout={handleAutoLayout}
                   projectId={activeProject?.id}
+                  projects={allProjects.map((p) => ({ id: p.id, name: p.name, ownerId: p.ownerId, data: p.data }))}
                 />
               ) : currentTab === 'bot' ? (
                 <div className="h-full p-6 bg-background overflow-auto">
@@ -1810,6 +1929,7 @@ export default function Editor() {
                     projectName={activeProject.name}
                     onOpenDialogPanel={handleOpenDialogPanel}
                     onOpenUserDetailsPanel={handleOpenUserDetailsPanel}
+                    onNavigateToDialog={(user) => { setPendingDialogUser(user); handleTabChange('dialogs'); }}
                     selectedTokenId={selectedDatabaseTokenId}
                     onSelectToken={setSelectedDatabaseTokenId}
                     allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
@@ -1840,6 +1960,32 @@ export default function Editor() {
                     projectId={activeProject.id}
                     selectedTokenId={selectedDatabaseTokenId}
                     onSelectToken={setSelectedDatabaseTokenId}
+                  />
+                </div>
+              ) : currentTab === 'tables' ? (
+                <div className="h-full overflow-hidden">
+                  <TablesPanel
+                    projectId={activeProject.id}
+                    selectedTokenId={selectedDatabaseTokenId}
+                    onSelectToken={setSelectedDatabaseTokenId}
+                    allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                    onProjectChange={(projectId) => {
+                      setSelectedDatabaseTokenId(null);
+                      setLocation(`/projects/${projectId}`);
+                    }}
+                  />
+                </div>
+              ) : currentTab === 'files' ? (
+                <div className="h-full overflow-hidden">
+                  <FilesPanel
+                    projectId={activeProject.id}
+                    selectedTokenId={selectedDatabaseTokenId}
+                    onSelectToken={setSelectedDatabaseTokenId}
+                    allProjects={allProjects.map((p) => ({ id: p.id, name: p.name }))}
+                    onProjectChange={(projectId) => {
+                      setSelectedDatabaseTokenId(null);
+                      setLocation(`/projects/${projectId}`);
+                    }}
                   />
                 </div>
               ) : currentTab === 'export' ? null : null}
@@ -1889,8 +2035,8 @@ export default function Editor() {
 
       {/* Мобильный sidebar */}
       <Sheet open={showMobileSidebar && currentTab === 'editor'} onOpenChange={setShowMobileSidebar}>
-        <SheetContent side="left" className="p-0 w-80">
-          <SheetHeader className="px-4 py-3 border-b">
+        <SheetContent side="left" className="p-0 w-80 [&>button[data-testid='button-sheet-close']]:hidden" aria-describedby={undefined}>
+          <SheetHeader className="sr-only">
             <SheetTitle>Компоненты</SheetTitle>
           </SheetHeader>
           <div className="h-full overflow-auto">
@@ -1922,7 +2068,11 @@ export default function Editor() {
               onSheetSelect={handleSheetSelect}
               isMobile={isMobile}
               onClose={() => setShowMobileSidebar(false)}
-              onNodeFocus={handleNodeFocus}
+              onNodeFocus={(nodeId, buttonId) => {
+                handleNodeFocus(nodeId, buttonId);
+                setShowMobileSidebar(false);
+                setShowMobileProperties(true);
+              }}
             />
           </div>
         </SheetContent>

@@ -35,16 +35,18 @@ import {
   MessageSquare,
   Radio,
   Save,
+  Search,
   Share2,
   Trash2,
   Zap,
 } from 'lucide-react';
-import { getNodeTypeLabel } from '@/components/editor/properties/utils/node-formatters';
+import { getNodeIcon, getNodeColor, getNodeName } from '@/components/editor/shared/node-registry';
 import { SheetNodeSearch } from './sheet-node-search';
 import { useSheetNodeSearch } from '../hooks/use-sheet-node-search';
 import { useSheetSearchState } from '../hooks/use-sheet-search-state';
 import { HighlightText } from './highlight-text';
 import { useNodeSelection } from '../hooks/use-node-selection';
+import { DeleteProjectDialog } from './delete-project-dialog';
 
 /**
  * Состояние drag-and-drop для проектов и листов
@@ -209,6 +211,10 @@ interface SheetAccordionContentProps {
   availableSheets?: Array<{ id: string; name: string }>;
   /** Колбэк массового перемещения узлов */
   onBulkMoveNodes?: (nodeIds: string[], targetSheetId: string) => void;
+  /** Колбэк выделения узла (открытие панели свойств без центрирования холста) */
+  onNodeSelect?: (nodeId: string) => void;
+  /** Скрыть встроенное поле поиска (при активном глобальном поиске) */
+  hideSearch?: boolean;
 }
 
 /**
@@ -223,9 +229,13 @@ function SheetAccordionContent({
   onNodeFocus,
   availableSheets = [],
   onBulkMoveNodes,
+  onNodeSelect,
+  hideSearch = false,
 }: SheetAccordionContentProps) {
   const filtered = useSheetNodeSearch(nodes, searchQuery);
   const { selectedNodeIds, toggleNode, clearSelection, isSelected, selectedCount } = useNodeSelection();
+  /** ID узла, на который последний раз кликнули (подсветка в списке) */
+  const [focusedNodeId, setFocusedNodeId] = useState<string | null>(null);
 
   /**
    * Обработчик выбора целевого листа для массового перемещения
@@ -240,7 +250,7 @@ function SheetAccordionContent({
 
   return (
     <div className="mt-0.5 mb-1 transition-all">
-      <SheetNodeSearch value={searchQuery} onChange={onSearchChange} />
+      {!hideSearch && <SheetNodeSearch value={searchQuery} onChange={onSearchChange} />}
       {/* Панель перемещения — над списком, появляется при выборе хотя бы одного узла */}
       {selectedCount > 0 && availableSheets.length > 0 && (
         <div className="px-1.5 py-1 mb-1 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
@@ -262,7 +272,7 @@ function SheetAccordionContent({
           {nodes.length === 0 ? 'Нет узлов' : 'Не найдено'}
         </div>
       ) : (
-        <div className="space-y-0.5">
+        <div className="space-y-1.5">
           {filtered.map((node: any) => {
             const shortContent = getShortContent(node);
             const isKeyboard = node.type === 'keyboard';
@@ -270,67 +280,115 @@ function SheetAccordionContent({
               ? (node.data?.buttons || []).filter((b: any) => b.text)
               : [];
             const selected = isSelected(node.id);
+            const nodeColor = getNodeColor(node.type);
+            const nodeIcon = getNodeIcon(node.type);
+            const nodeName = node.type === 'keyboard'
+              ? node.data?.keyboardType === 'reply' ? 'Reply кнопки' : 'Inline кнопки'
+              : getNodeName(node.type);
             return (
               <div
                 key={node.id}
-                className="group/node px-1.5 py-0.5 rounded text-xs text-muted-foreground cursor-pointer hover:bg-muted/40 transition-colors"
+                className={cn(
+                  "group/node flex items-center gap-2 sm:gap-3 p-2.5 sm:p-3 rounded-lg sm:rounded-xl cursor-pointer border transition-all duration-200",
+                  "bg-gradient-to-br from-muted/40 to-muted/20 dark:from-slate-800/50 dark:to-slate-900/30",
+                  "hover:from-muted/70 hover:to-muted/40",
+                  focusedNodeId === node.id
+                    ? 'border-primary/60 ring-1 ring-primary/30 shadow-sm shadow-primary/10'
+                    : 'border-border/30 hover:border-primary/30'
+                )}
                 onClick={(e) => {
                   e.stopPropagation();
+                  setFocusedNodeId(node.id);
+                  if (onNodeFocus && node.id) onNodeFocus(node.id);
+                }}
+                /** Обработчик тача для мобильных — дублирует onClick при перехвате touch-событий родителем */
+                onTouchEnd={(e) => {
+                  e.stopPropagation();
+                  setFocusedNodeId(node.id);
                   if (onNodeFocus && node.id) onNodeFocus(node.id);
                 }}
               >
-                <div className="flex items-center gap-1.5">
-                  {/* Чекбокс — виден только при hover на строку или если выбран */}
-                  <input
-                    type="checkbox"
-                    checked={selected}
-                    className={`transition-opacity h-3.5 w-3.5 flex-shrink-0 cursor-pointer accent-blue-500 ${selected ? 'opacity-100' : 'opacity-0 group-hover/node:opacity-70'}`}
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => {
-                      e.stopPropagation();
-                      toggleNode(node.id);
-                      if (e.target.checked) {
-                        onNodeFocus?.(node.id, undefined, true);
-                      } else {
-                        // сбрасываем подсветку вызовом с коротким таймаутом
-                        onNodeFocus?.(node.id, undefined, false);
-                      }
-                    }}
-                  />
-                  <NodeTypeIcon type={node.type} />
-                  <span className="font-medium flex-shrink-0">
-                    <HighlightText
-                      text={node.type === 'keyboard'
-                        ? node.data?.keyboardType === 'reply' ? 'Reply кнопки' : 'Inline кнопки'
-                        : getNodeTypeLabel(node.type)}
-                      query={searchQuery}
-                    />
-                  </span>
-                  {shortContent && (
-                    <span className="truncate opacity-70 min-w-0">
-                      <HighlightText text={shortContent} query={searchQuery} />
-                    </span>
+                {/* Чекбокс выбора для массового перемещения */}
+                <div
+                  className={cn(
+                    "h-5 w-5 flex-shrink-0 cursor-pointer rounded border-2 flex items-center justify-center transition-all",
+                    selected
+                      ? 'bg-blue-500 border-blue-500 text-white'
+                      : 'border-slate-400 dark:border-slate-500 bg-transparent hover:border-blue-400'
+                  )}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleNode(node.id);
+                  }}
+                >
+                  {selected && (
+                    <svg className="w-3 h-3" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M2 6l3 3 5-5" />
+                    </svg>
                   )}
                 </div>
-                {isKeyboard && buttonObjects.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-1 ml-4">
-                    {buttonObjects.map((btn) => (
-                      <span
-                        key={btn.id}
-                        className="px-1.5 py-0.5 rounded bg-muted/60 border border-border/50 text-xs opacity-80 truncate max-w-[80px] cursor-pointer hover:opacity-100"
-                        title={btn.text}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (onNodeFocus && btn.id) {
-                            onNodeFocus(node.id, btn.id);
-                          }
-                        }}
-                      >
-                        <HighlightText text={btn.text} query={searchQuery} />
-                      </span>
-                    ))}
-                  </div>
+                {/* Цветная иконка */}
+                <div className={cn(
+                  "w-8 h-8 sm:w-9 sm:h-9 rounded-lg flex items-center justify-center flex-shrink-0",
+                  "transition-transform group-hover/node:scale-110",
+                  nodeColor
+                )}>
+                  <i className={`${nodeIcon} text-xs sm:text-sm`}></i>
+                </div>
+                {/* Название и описание */}
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs sm:text-sm font-semibold text-foreground truncate">
+                    <HighlightText text={nodeName} query={searchQuery} />
+                  </p>
+                  {shortContent && (
+                    <p className="text-xs text-muted-foreground line-clamp-1">
+                      <HighlightText text={shortContent} query={searchQuery} />
+                    </p>
+                  )}
+                  {isKeyboard && buttonObjects.length > 0 && (
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {buttonObjects.map((btn) => (
+                        <span
+                          key={btn.id}
+                          className="px-1.5 py-0.5 rounded bg-muted/60 border border-border/50 text-xs opacity-80 truncate max-w-[80px] cursor-pointer hover:opacity-100"
+                          title={btn.text}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onNodeFocus && btn.id) {
+                              onNodeFocus(node.id, btn.id);
+                            }
+                          }}
+                        >
+                          <HighlightText text={btn.text} query={searchQuery} />
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Кнопка открытия свойств узла (всегда видна для мобильных устройств) */}
+                {onNodeSelect && (
+                  <button
+                    className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary dark:bg-primary/15 dark:hover:bg-primary/25 flex items-center justify-center transition-all duration-200 hover:shadow-md hover:shadow-primary/20"
+                    title="Открыть свойства"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (node.id) onNodeSelect(node.id);
+                    }}
+                  >
+                    <i className="fas fa-sliders-h text-xs" />
+                  </button>
                 )}
+                {/* Кнопка центрирования на узле (всегда видна для мобильных устройств) */}
+                <button
+                  className="flex-shrink-0 w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary/10 hover:bg-primary/20 text-primary dark:bg-primary/15 dark:hover:bg-primary/25 flex items-center justify-center transition-all duration-200 hover:shadow-md hover:shadow-primary/20"
+                  title="Центрировать на узле"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onNodeFocus && node.id) onNodeFocus(node.id);
+                  }}
+                >
+                  <i className="fas fa-crosshairs text-xs" />
+                </button>
               </div>
             );
           })}
@@ -404,9 +462,14 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
   const dragSheetIndexRef = useRef<number | null>(null);
   const [expandedSheets, setExpandedSheets] = useState<Set<string>>(new Set());
   const { getSheetQuery, setSheetQuery } = useSheetSearchState();
+  /** Глобальный поисковый запрос по всем листам */
+  const [globalSearchQuery, setGlobalSearchQuery] = useState('');
+  /** Показывать ли диалог подтверждения удаления */
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const toggleSheetExpanded = (sheetId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    const wasExpanded = expandedSheets.has(sheetId);
     setExpandedSheets((prev) => {
       const next = new Set(prev);
       if (next.has(sheetId)) {
@@ -416,6 +479,13 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       }
       return next;
     });
+    // При сворачивании — прокрутить к заголовку листа
+    if (wasExpanded) {
+      const btn = (e.currentTarget as HTMLElement).closest('[data-sheet-id]');
+      if (btn) {
+        setTimeout(() => btn.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50);
+      }
+    }
   };
 
   const sheetsInfo = getSheetsInfo(project);
@@ -455,12 +525,12 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
 
   /**
    * Обработчик удаления проекта
-   * Предотвращает всплытие события
+   * Открывает диалог подтверждения удаления
    * @param e - Событие клика
    */
   const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    onProjectDelete(project.id);
+    setShowDeleteDialog(true);
   };
 
   /**
@@ -603,7 +673,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
       onTouchMove={onTouchMove}
       onTouchEnd={onTouchEnd}
       className={cn(
-        'group p-2.5 xs:p-3 sm:p-4 rounded-lg xs:rounded-xl sm:rounded-2xl cursor-pointer transition-all duration-300 border backdrop-blur-sm overflow-hidden',
+        'group p-2.5 xs:p-3 sm:p-4 rounded-lg xs:rounded-xl sm:rounded-2xl cursor-pointer transition-all duration-300 border backdrop-blur-sm',
         isActive
           ? 'bg-gradient-to-br from-blue-600/20 via-blue-500/10 to-cyan-600/15 dark:from-blue-600/30 dark:via-blue-500/20 dark:to-cyan-600/25 border-blue-500/50 dark:border-blue-400/50 shadow-lg shadow-blue-500/25'
           : 'bg-gradient-to-br from-slate-50/60 to-slate-100/40 dark:from-slate-900/50 dark:to-slate-800/40 border-slate-200/40 dark:border-slate-700/40 hover:border-slate-300/60 dark:hover:border-slate-600/60 hover:bg-gradient-to-br hover:from-slate-100/80 hover:to-slate-100/50 dark:hover:from-slate-800/70 dark:hover:to-slate-700/50 hover:shadow-md hover:shadow-slate-500/20',
@@ -691,23 +761,59 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
         </span>
       </div>
 
+      {/* Глобальный поиск узлов по всем листам */}
+      {sheetsInfo.names.length > 0 && (
+        <div className="relative mb-2" onClick={(e) => e.stopPropagation()}>
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground pointer-events-none" />
+          <Input
+            value={globalSearchQuery}
+            onChange={(e) => setGlobalSearchQuery(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            placeholder="Поиск узлов..."
+            className="h-7 text-xs pl-7 pr-2 py-0"
+          />
+        </div>
+      )}
+
       {/* Список листов */}
       {sheetsInfo.names.length > 0 && (
         <div className="space-y-0.5 sm:space-y-1">
           {sheetsInfo.names.map((name: string, index: number) => {
             const sheetId = SheetsManager.isNewFormat(projectData) ? projectData.sheets[index]?.id : null;
+
+            // При активном глобальном поиске — скрываем листы без совпадений
+            if (globalSearchQuery.trim()) {
+              const sheetNodes: any[] = projectData.sheets?.[index]?.nodes || [];
+              const lower = globalSearchQuery.toLowerCase();
+              const hasMatch = sheetNodes.some((node: any) => {
+                const typeName = getNodeName(node.type).toLowerCase();
+                if (typeName.includes(lower)) return true;
+                const content = getShortContent(node).toLowerCase();
+                if (content.includes(lower)) return true;
+                const buttons: string[] = node.data?.buttons?.map((b: any) => b.text || '') ?? [];
+                if (buttons.some((text) => text.toLowerCase().includes(lower))) return true;
+                return false;
+              });
+              if (!hasMatch) return null;
+            }
+
             const isActiveSheet = currentProjectId === project.id && sheetId === activeSheetId;
             const isEditing = editingState.editingSheetId !== null && sheetId !== null && editingState.editingSheetId === sheetId;
             const isDraggedSheet = dragState.draggedSheet?.sheetId === sheetId && dragState.draggedSheet?.projectId === project.id;
 
             return (
-              <div key={sheetId || index}>
+              <div key={sheetId || index} className="relative" data-sheet-id={sheetId}>
               <div
                 className={cn(
-                  'flex items-center gap-1 sm:gap-1.5 group/sheet px-1.5 sm:px-2 py-0.5 sm:py-1 rounded-md hover:bg-muted/50 transition-colors border-t-2',
+                  'w-full flex items-center justify-between gap-2 sm:gap-3 px-2 sm:px-3 py-2 sm:py-2.5 rounded-lg sm:rounded-xl',
+                  'sticky top-0 z-10',
+                  'bg-slate-100 dark:bg-slate-800',
+                  'hover:bg-slate-200 dark:hover:bg-slate-700',
+                  'transition-all duration-200 group/sheet border border-slate-200/40 dark:border-slate-700/40 hover:border-primary/30',
                   dragOverSheetIndex === index && draggingSheetIndex !== index
                     ? 'border-blue-500'
-                    : 'border-transparent'
+                    : ''
                 )}
                 onDragOver={(e) => {
                   if (dragSheetIndexRef.current !== null) {
@@ -729,82 +835,85 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
                   dragSheetIndexRef.current = null;
                 }}
               >
-                {/* Кнопка-стрелка аккордеона (только для нового формата) */}
-                {SheetsManager.isNewFormat(projectData) && sheetId && !isEditing && (
-                  <button
-                    className="flex-shrink-0 text-muted-foreground hover:text-foreground transition-colors p-0.5 rounded"
-                    onClick={(e) => toggleSheetExpanded(sheetId, e)}
-                    title={expandedSheets.has(sheetId) ? 'Свернуть' : 'Развернуть'}
-                  >
-                    {expandedSheets.has(sheetId)
-                      ? <ChevronDown className="h-3 w-3" />
-                      : <ChevronRight className="h-3 w-3" />
-                    }
-                  </button>
-                )}
-
-                {isEditing ? (
-                  <Input
-                    value={editingState.editingSheetName}
-                    onChange={(e) => onEditingSheetNameChange(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        onSaveSheetName();
-                      } else if (e.key === 'Escape') {
-                        onCancelEditSheetName();
+                {/* Левая часть: стрелка + название */}
+                <div className="flex items-center gap-2 flex-1 min-w-0">
+                  {/* Кнопка-стрелка аккордеона */}
+                  {SheetsManager.isNewFormat(projectData) && sheetId && !isEditing && (
+                    <button
+                      className="flex-shrink-0 p-1 rounded-md hover:bg-muted/50 transition-colors"
+                      onClick={(e) => toggleSheetExpanded(sheetId, e)}
+                      title={(expandedSheets.has(sheetId) || globalSearchQuery.trim()) ? 'Свернуть' : 'Развернуть'}
+                    >
+                      {(expandedSheets.has(sheetId) || globalSearchQuery.trim())
+                        ? <ChevronDown className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
+                        : <ChevronRight className="h-4 w-4 sm:h-5 sm:w-5 text-muted-foreground" />
                       }
-                    }}
-                    onBlur={onSaveSheetName}
-                    autoFocus
-                    className="text-xs px-1.5 sm:px-2 py-0.5 sm:py-1 h-5 sm:h-6 flex-1 font-medium"
-                  />
-                ) : (
-                  <div
-                    draggable
-                    onDragStart={(e) => {
-                      if (sheetId) {
+                    </button>
+                  )}
+
+                  {isEditing ? (
+                    <Input
+                      value={editingState.editingSheetName}
+                      onChange={(e) => onEditingSheetNameChange(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          onSaveSheetName();
+                        } else if (e.key === 'Escape') {
+                          onCancelEditSheetName();
+                        }
+                      }}
+                      onBlur={onSaveSheetName}
+                      autoFocus
+                      className="text-xs sm:text-sm px-2 py-1 h-7 flex-1 font-medium"
+                    />
+                  ) : (
+                    <div
+                      draggable
+                      onDragStart={(e) => {
+                        if (sheetId) {
+                          e.stopPropagation();
+                          dragSheetIndexRef.current = index;
+                          setDraggingSheetIndex(index);
+                          onSheetDragStart(e, sheetId);
+                        }
+                      }}
+                      onDragEnd={(e) => {
                         e.stopPropagation();
-                        dragSheetIndexRef.current = index;
-                        setDraggingSheetIndex(index);
-                        onSheetDragStart(e, sheetId);
-                      }
-                    }}
-                    onDragEnd={(e) => {
-                      e.stopPropagation();
-                      dragSheetIndexRef.current = null;
-                      setDraggingSheetIndex(null);
-                      setDragOverSheetIndex(null);
-                      onSheetDragLeave();
-                    }}
-                    className={cn(
-                      'text-xs px-1.5 sm:px-2 py-0.5 cursor-grab active:cursor-grabbing transition-all flex-1 font-medium rounded-md border focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent inline-flex items-center text-center line-clamp-1',
-                      isActiveSheet
-                        ? 'bg-primary text-primary-foreground shadow-sm'
-                        : 'bg-muted/50 text-foreground hover:bg-muted',
-                      isDraggedSheet ? 'opacity-50' : ''
-                    )}
-                    onClick={() => {
-                      if (sheetId) {
-                        handleSheetClick(sheetId);
-                      }
-                    }}
-                    onDoubleClick={() => {
-                      if (sheetId) {
-                        handleEditSheet(sheetId, name);
-                      }
-                    }}
-                    title={name}
-                  >
-                    <span className="truncate">{name || 'Без названия'}</span>
-                    {SheetsManager.isNewFormat(projectData) && (
-                      <span className="ml-1 flex-shrink-0 text-xs opacity-50 font-normal">
-                        {projectData.sheets[index]?.nodes?.length ?? 0}
-                      </span>
-                    )}
-                  </div>
-                )}
+                        dragSheetIndexRef.current = null;
+                        setDraggingSheetIndex(null);
+                        setDragOverSheetIndex(null);
+                        onSheetDragLeave();
+                      }}
+                      className={cn(
+                        'truncate cursor-grab active:cursor-grabbing font-medium text-sm',
+                        isActiveSheet ? 'text-primary' : 'text-foreground',
+                        isDraggedSheet ? 'opacity-50' : ''
+                      )}
+                      onClick={() => {
+                        if (sheetId) {
+                          handleSheetClick(sheetId);
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        if (sheetId) {
+                          handleEditSheet(sheetId, name);
+                        }
+                      }}
+                      title={name}
+                    >
+                      {name || 'Без названия'}
+                    </div>
+                  )}
 
-                {/* Кнопки управления листом */}
+                  {/* Счётчик узлов */}
+                  {SheetsManager.isNewFormat(projectData) && (
+                    <span className="text-xs bg-muted/60 dark:bg-slate-700/60 px-2 py-0.5 rounded-full font-semibold text-muted-foreground whitespace-nowrap flex-shrink-0">
+                      {projectData.sheets[index]?.nodes?.length ?? 0}
+                    </span>
+                  )}
+                </div>
+
+                {/* Правая часть: кнопки управления */}
                 {currentProjectId === project.id && !isEditing && sheetId && (
                   <div className="flex gap-0.5 sm:gap-1 opacity-0 group-hover/sheet:opacity-100 transition-opacity flex-shrink-0">
                     <Button
@@ -888,12 +997,14 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
               </div>
 
               {/* Аккордеон: поиск и список узлов листа */}
-              {SheetsManager.isNewFormat(projectData) && sheetId && expandedSheets.has(sheetId) && (
+              {SheetsManager.isNewFormat(projectData) && sheetId && (expandedSheets.has(sheetId) || globalSearchQuery.trim()) && (
                 <SheetAccordionContent
                   nodes={projectData.sheets[index]?.nodes || []}
-                  searchQuery={getSheetQuery(sheetId)}
+                  searchQuery={globalSearchQuery.trim() ? globalSearchQuery : getSheetQuery(sheetId)}
                   onSearchChange={(q) => setSheetQuery(sheetId, q)}
                   onNodeFocus={onNodeFocus}
+                  onNodeSelect={onNodeFocus}
+                  hideSearch={!!globalSearchQuery.trim()}
                   availableSheets={
                     SheetsManager.isNewFormat(projectData)
                       ? projectData.sheets
@@ -913,6 +1024,15 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
           })}
         </div>
       )}
+
+      {/* Диалог подтверждения удаления проекта */}
+      <DeleteProjectDialog
+        open={showDeleteDialog}
+        onOpenChange={setShowDeleteDialog}
+        projectName={project.name}
+        projectData={projectData}
+        onDelete={() => onProjectDelete(project.id)}
+      />
     </div>
   );
 };

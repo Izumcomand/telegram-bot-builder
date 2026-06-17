@@ -14,6 +14,7 @@ import { z } from "zod";
 import { storage } from "../../../storages/storage";
 import type { StorageBotProjectUpdate } from "../../../storages/storageTypes";
 import { restartBotIfRunning } from "../../../bots/restartBotIfRunning";
+import { syncContentToTable } from "../../../services/content-table";
 
 /**
  * Обрабатывает запрос на обновление проекта
@@ -43,6 +44,23 @@ export async function updateProjectHandler(req: Request, res: Response): Promise
         if (!project) {
             res.status(404).json({ message: "Проект не найден" });
             return;
+        }
+
+        // Синхронизация контента в таблицу _content
+        if (validatedData.data) {
+            try {
+                await syncContentToTable(projectId, validatedData.data);
+                // Уведомляем бота о обновлении контента через Redis
+                try {
+                    const { getRedisPublisher } = await import("../../../redis/redisClient");
+                    const pub = getRedisPublisher();
+                    if (pub) {
+                        await pub.publish(`bot:table_updated:${projectId}`, "reload");
+                    }
+                } catch {}
+            } catch (err) {
+                console.error(`[updateProjectHandler] Ошибка синхронизации _content для проекта ${projectId}:`, err);
+            }
         }
 
         if (validatedData.data && validatedData.restartOnUpdate) {

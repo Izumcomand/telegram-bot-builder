@@ -15,7 +15,7 @@ import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from '@/componen
 import { useMediaQuery } from '@/components/editor/properties/hooks/use-media-query';
 import { Bot, Terminal } from 'lucide-react';
 import { BotsPanel } from './BotsPanel';
-import { TerminalPanel } from '../terminal/TerminalPanel';
+import { TerminalPanel } from '../../terminal/TerminalPanel';
 import { useActiveTerminals } from '../contexts/ActiveTerminalsContext';
 
 type MobileTab = 'bots' | 'terminal';
@@ -23,9 +23,13 @@ type MobileTab = 'bots' | 'terminal';
 interface BotLayoutProps {
   projectId: number;
   projectName: string;
+  /** Список всех проектов для переключателя */
+  allProjects?: Array<{ id: number; name: string }>;
+  /** Обработчик смены проекта */
+  onProjectChange?: (projectId: number) => void;
 }
 
-export function BotLayout({ projectId, projectName }: BotLayoutProps) {
+export function BotLayout({ projectId, projectName, allProjects, onProjectChange }: BotLayoutProps) {
   const [mobileTab, setMobileTab] = useState<MobileTab>('bots');
   const { terminals } = useActiveTerminals();
   const isDesktop = useMediaQuery('(min-width: 768px)');
@@ -35,11 +39,11 @@ export function BotLayout({ projectId, projectName }: BotLayoutProps) {
     return (
       <div className="h-full">
         <ResizablePanelGroup direction="horizontal" className="h-full">
-          <ResizablePanel defaultSize={40} minSize={25}>
-            <BotsPanel projectId={projectId} projectName={projectName} />
+          <ResizablePanel defaultSize={50} minSize={30}>
+            <BotsPanel projectId={projectId} projectName={projectName} allProjects={allProjects} onProjectChange={onProjectChange} />
           </ResizablePanel>
           <ResizableHandle withHandle />
-          <ResizablePanel defaultSize={60} minSize={25}>
+          <ResizablePanel defaultSize={50} minSize={25}>
             <TerminalPanel />
           </ResizablePanel>
         </ResizablePanelGroup>
@@ -85,7 +89,7 @@ export function BotLayout({ projectId, projectName }: BotLayoutProps) {
 
       <div className="flex-1 min-h-0 overflow-hidden">
         <div className={mobileTab === 'bots' ? 'h-full' : 'hidden'}>
-          <BotsPanel projectId={projectId} projectName={projectName} />
+          <BotsPanel projectId={projectId} projectName={projectName} allProjects={allProjects} onProjectChange={onProjectChange} />
         </div>
         <div className={mobileTab === 'terminal' ? 'h-full' : 'hidden'}>
           <TerminalPanel />

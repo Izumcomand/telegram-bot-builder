@@ -46,18 +46,38 @@ export function sendOutputToTerminals(
     ? parseLogTimestamp(content)
     : new Date().toISOString();
 
-  if (connections) {
-    const message: TerminalMessage = {
-      type,
-      content,
-      projectId,
-      tokenId,
-      timestamp,
-    };
+  // Проверяем наличие прямого подписчика (projectId_tokenId)
+  // Если нет — лог всё равно уйдёт через user_* подписки ниже
+  const connCount = connections?.size ?? 0;
 
+  const message: TerminalMessage = {
+    type,
+    content,
+    projectId,
+    tokenId,
+    timestamp,
+  };
+
+  if (connections) {
+    let sentCount = 0;
     for (const ws of connections) {
       if (ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message));
+        sentCount++;
+      }
+    }
+    if (sentCount === 0 && connections.size > 0) {
+      console.warn(`[Terminal] ⚠️ ${connections.size} соединений для ${connectionKey}, но ни одно не OPEN`);
+    }
+  }
+
+  // Рассылаем также подписчикам user_* (глобальная подписка на все проекты)
+  for (const [key, conns] of activeConnections.entries()) {
+    if (!key.startsWith('user_')) continue;
+    const payload = JSON.stringify(message);
+    for (const ws of conns) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(payload);
       }
     }
   }

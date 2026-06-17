@@ -54,7 +54,6 @@ async function executeWithRetry(db: any, query: any, description: string, maxRet
  * - bot_instances: экземпляры запущенных ботов
  * - bot_templates: сценарии ботов
  * - media_files: медиафайлы, используемые в ботах
- * - user_bot_data: данные пользователей ботов
  * - bot_groups: группы, в которых работают боты
  * - group_members: участники групп
  * - bot_users: пользователи ботов
@@ -250,39 +249,6 @@ export async function initializeDatabaseTables() {
     `, "Создание таблицы media_files");
 
     await executeWithRetry(db, sql`
-      CREATE TABLE IF NOT EXISTS user_bot_data (
-        id SERIAL PRIMARY KEY,
-        project_id INTEGER REFERENCES bot_projects(id) ON DELETE CASCADE NOT NULL,
-        token_id INTEGER NOT NULL DEFAULT 0,
-        user_id TEXT NOT NULL,
-        user_name TEXT,
-        first_name TEXT,
-        last_name TEXT,
-        language_code TEXT,
-        is_bot INTEGER DEFAULT 0,
-        is_premium INTEGER DEFAULT 0,
-        last_interaction TIMESTAMP DEFAULT NOW(),
-        interaction_count INTEGER DEFAULT 0,
-        user_data JSONB DEFAULT '{}',
-        current_state TEXT,
-        preferences JSONB DEFAULT '{}',
-        commands_used JSONB DEFAULT '{}',
-        sessions_count INTEGER DEFAULT 1,
-        total_messages_sent INTEGER DEFAULT 0,
-        total_messages_received INTEGER DEFAULT 0,
-        device_info TEXT,
-        location_data JSONB,
-        contact_data JSONB,
-        is_blocked INTEGER DEFAULT 0,
-        is_active INTEGER DEFAULT 1,
-        tags TEXT[] DEFAULT '{}',
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      );
-    `, "Создание таблицы user_bot_data");
-
-    await executeWithRetry(db, sql`
       CREATE TABLE IF NOT EXISTS bot_groups (
         id SERIAL PRIMARY KEY,
         project_id INTEGER REFERENCES bot_projects(id) ON DELETE CASCADE NOT NULL,
@@ -310,6 +276,12 @@ export async function initializeDatabaseTables() {
         updated_at TIMESTAMP DEFAULT NOW()
       );
     `, "Создание таблицы bot_groups");
+
+    await executeWithRetry(db, sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS bot_groups_project_group_uniq
+      ON bot_groups (project_id, group_id)
+      WHERE group_id IS NOT NULL;
+    `, "Уникальный индекс bot_groups (project_id, group_id)");
 
     await executeWithRetry(db, sql`
       CREATE TABLE IF NOT EXISTS group_members (
@@ -620,16 +592,6 @@ export async function initializeDatabaseTables() {
       console.log('⚠️ Ошибка при миграции таблицы bot_users:', error);
     }
 
-    // Миграция: добавить token_id в user_bot_data
-    try {
-      await executeWithRetry(db, sql`
-        ALTER TABLE user_bot_data
-        ADD COLUMN IF NOT EXISTS token_id INTEGER NOT NULL DEFAULT 0;
-      `, "Миграция: добавление token_id в user_bot_data");
-    } catch (error) {
-      console.log('⚠️ Ошибка при миграции token_id в user_bot_data:', error);
-    }
-
     // Миграция: добавить token_id в bot_messages
     try {
       await executeWithRetry(db, sql`
@@ -638,6 +600,30 @@ export async function initializeDatabaseTables() {
       `, "Миграция: добавление token_id в bot_messages");
     } catch (error) {
       console.log('⚠️ Ошибка при миграции token_id в bot_messages:', error);
+    }
+
+    // Миграция: добавить telegram_message_id в bot_messages
+    try {
+      await executeWithRetry(db, sql`
+        ALTER TABLE bot_messages
+        ADD COLUMN IF NOT EXISTS telegram_message_id INTEGER;
+      `, "Миграция: добавление telegram_message_id в bot_messages");
+    } catch (error) {
+      console.log('⚠️ Ошибка при миграции telegram_message_id в bot_messages:', error);
+    }
+
+    // Миграция: добавить chat_type и chat_id в bot_messages
+    try {
+      await executeWithRetry(db, sql`
+        ALTER TABLE bot_messages
+        ADD COLUMN IF NOT EXISTS chat_type TEXT DEFAULT 'private';
+      `, "Миграция: добавление chat_type в bot_messages");
+      await executeWithRetry(db, sql`
+        ALTER TABLE bot_messages
+        ADD COLUMN IF NOT EXISTS chat_id TEXT;
+      `, "Миграция: добавление chat_id в bot_messages");
+    } catch (error) {
+      console.log('⚠️ Ошибка при миграции chat_type/chat_id в bot_messages:', error);
     }
 
     // Миграция: добавить token_id в bot_users и обновить первичный ключ
@@ -700,6 +686,24 @@ export async function initializeDatabaseTables() {
       `, "Миграция: добавление is_bot в bot_users");
     } catch (error) {
       console.log('⚠️ Ошибка при миграции полей трекинга в bot_users:', error);
+    }
+
+    // Миграция: добавить buttons в broadcasts (инлайн-кнопки сообщения рассылки)
+    try {
+      await executeWithRetry(db, sql`
+        ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS buttons JSON DEFAULT '[]';
+      `, "Миграция: добавление buttons в broadcasts");
+    } catch (error) {
+      console.log('⚠️ Ошибка при миграции buttons в broadcasts:', error);
+    }
+
+    // Миграция: добавить buttons_per_row в broadcasts (раскладка кнопок по рядам)
+    try {
+      await executeWithRetry(db, sql`
+        ALTER TABLE broadcasts ADD COLUMN IF NOT EXISTS buttons_per_row INTEGER DEFAULT 0;
+      `, "Миграция: добавление buttons_per_row в broadcasts");
+    } catch (error) {
+      console.log('⚠️ Ошибка при миграции buttons_per_row в broadcasts:', error);
     }
 
     console.log('✅ Таблицы базы данных успешно инициализированы!');

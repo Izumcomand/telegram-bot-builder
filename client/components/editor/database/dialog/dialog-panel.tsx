@@ -1,16 +1,23 @@
 /**
  * @fileoverview Главная панель диалога с пользователем
- * @description Координирует все компоненты диалога, объединяет HTTP и WS сообщения
+ * @description Координирует все компоненты диалога, объединяет HTTP и WS сообщения.
+ * Поддерживает как личные диалоги, так и групповые чаты.
  */
 
-import { useEffect, useRef, useState, useMemo } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { Users, Radio } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { buildUsersApiUrl, formatUserName } from '../utils';
 import { DialogPanelProps, BotMessageWithMedia } from './types';
 import { useSendMessage } from './hooks/use-send-message';
+import { useSendGroupMessage } from './hooks/use-send-group-message';
+import { useDeleteMessage } from './hooks/use-delete-message';
+import { useEditMessage } from './hooks/use-edit-message';
 import { useBotData } from './hooks/use-bot-data';
+import { useProjectData } from './hooks/use-project-data';
+import { collectNodesFromProjectData } from './utils/node-utils';
 import { useDialogLiveMessages } from './hooks/use-dialog-live-messages';
 import { useUserList } from '@/components/editor/database/user-details/hooks/useUserList';
 import { MessageBubble } from './components/message-bubble';
@@ -53,6 +60,7 @@ function mergeMessages(
 /**
  * Компонент панели диалога с пользователем бота.
  * Объединяет сообщения из HTTP-запроса и WebSocket (live).
+ * Для групп загружает сообщения через /groups/:groupId/messages и отправляет через send-group-message.
  * @param props - Пропсы компонента
  * @returns JSX элемент панели диалога
  */
@@ -62,22 +70,49 @@ export function DialogPanel({
   user,
   onClose,
   onSelectUser,
+  hideHeader,
 }: DialogPanelProps) {
   const [showWarning, setShowWarning] = useState(() => {
     if (typeof window === 'undefined') return true;
     return localStorage.getItem('dialog-warning-dismissed') !== 'true';
   });
 
+  /** Набор id сообщений, оптимистично скрытых при удалении */
+  const [deletedMessageIds, setDeletedMessageIds] = useState<Set<number>>(new Set());
+
+  /** Карта оптимистично отредактированных сообщений: messageId → новый текст */
+  const [editedMessages, setEditedMessages] = useState<Map<number, string>>(new Map());
+
   const messagesScrollRef = useRef<HTMLDivElement>(null);
   const prevMessageCountRef = useRef(0);
+
+  /** Флаг группового диалога */
+  const isGroup = !!(user as any)?.isGroup;
+  /** Telegram chat_id группы (хранится в userId для групп) */
+  const groupChatId = isGroup ? String(user?.userId ?? '') : null;
+  /** Тип чата группы */
+  const groupChatType = (user as any)?.chatType as string | undefined;
+  const isChannel = groupChatType === 'channel';
 
   const { users } = useUserList(projectId, selectedTokenId);
   const { bot } = useBotData(projectId);
 
-  const requestUrl = buildUsersApiUrl(
-    `/api/projects/${projectId}/users/${user?.userId}/messages`,
-    selectedTokenId
+  /** Данные проекта для извлечения узлов (нужны редактору кнопок для действия goto) */
+  const { project } = useProjectData(projectId);
+
+  /** Узлы проекта со всех листов для выбора цели действия goto в инлайн-кнопках */
+  const availableNodes = useMemo(
+    () => collectNodesFromProjectData((project?.data as Record<string, unknown>) ?? null),
+    [project?.data],
   );
+
+  // URL для загрузки сообщений: группа или личный диалог
+  const requestUrl = isGroup
+    ? `/api/projects/${projectId}/groups/${encodeURIComponent(groupChatId ?? '')}/messages`
+    : buildUsersApiUrl(
+        `/api/projects/${projectId}/users/${user?.userId}/messages`,
+        selectedTokenId
+      );
 
   const {
     data: httpMessages = [],
@@ -101,39 +136,46 @@ export function DialogPanel({
     },
   });
 
-  const { liveMessages, resetLiveMessages, addOptimisticMessage, removeOptimisticMessage } =
-    useDialogLiveMessages(projectId, selectedTokenId, user?.userId);
+  const { liveMessages, resetLiveMessages, addOptimisticMessage, removeOptimisticMessage, wsDeletedIds, wsEditedMessages } =
+    useDialogLiveMessages(projectId, selectedTokenId, user?.userId, isGroup ? groupChatId : null);
 
   /** Объединённые и дедуплицированные сообщения */
-  const messages = useMemo(
+  const allMessages = useMemo(
     () => mergeMessages(httpMessages, liveMessages),
     [httpMessages, liveMessages],
   );
 
-  /** Сброс live-сообщений при смене пользователя */
+  /** Сообщения без оптимистично удалённых и удалённых через WS */
+  const messages = useMemo(
+    () => allMessages.filter((m) => !deletedMessageIds.has(m.id) && !wsDeletedIds.has(m.id)),
+    [allMessages, deletedMessageIds, wsDeletedIds],
+  );
+
+  /** Сброс live-сообщений и удалённых id при смене пользователя */
   useEffect(() => {
     resetLiveMessages();
+    setDeletedMessageIds(new Set());
+    setEditedMessages(new Map());
     prevMessageCountRef.current = 0;
   }, [user?.userId, resetLiveMessages]);
 
   /** Автопрокрутка при первой загрузке и при новых live-сообщениях */
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (messagesLoading) return;
     if (messages.length === 0) return;
     if (messages.length <= prevMessageCountRef.current) return;
 
     prevMessageCountRef.current = messages.length;
 
-    setTimeout(() => {
-      const viewport = messagesScrollRef.current?.querySelector(
-        '[data-radix-scroll-area-viewport]',
-      );
-      if (viewport) {
-        viewport.scrollTop = viewport.scrollHeight;
-      }
-    }, 100);
+    const viewport = messagesScrollRef.current?.querySelector(
+      '[data-radix-scroll-area-viewport]',
+    );
+    if (viewport) {
+      viewport.scrollTop = viewport.scrollHeight;
+    }
   }, [messagesLoading, messages.length]);
 
+  // Мутация отправки для личного диалога
   const sendMessageMutation = useSendMessage({
     projectId,
     selectedTokenId,
@@ -144,6 +186,42 @@ export function DialogPanel({
     removeOptimisticMessage,
   });
 
+  // Мутация отправки для группы
+  const sendGroupMessageMutation = useSendGroupMessage({
+    projectId,
+    groupId: groupChatId,
+    selectedTokenId,
+    onSent: refetchMessages,
+  });
+
+  const deleteMessageMutation = useDeleteMessage({
+    projectId,
+    selectedTokenId,
+    onOptimisticRemove: (id) =>
+      setDeletedMessageIds((prev) => new Set(prev).add(id)),
+    onRollback: (id) =>
+      setDeletedMessageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      }),
+    onDeleted: refetchMessages,
+  });
+
+  const editMessageMutation = useEditMessage({
+    projectId,
+    selectedTokenId,
+    onOptimisticEdit: (messageId, newText) =>
+      setEditedMessages((prev) => new Map(prev).set(messageId, newText)),
+    onRollback: (messageId, originalText) =>
+      setEditedMessages((prev) => {
+        const next = new Map(prev);
+        next.set(messageId, originalText);
+        return next;
+      }),
+    onEdited: refetchMessages,
+  });
+
   if (!user) {
     return <NoUserSelected />;
   }
@@ -152,15 +230,46 @@ export function DialogPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden bg-background">
-      <DialogHeader
-        user={user}
-        users={users}
-        formatUserName={formatUserName}
-        onSelectUser={handleSelectUser}
-        onClose={onClose}
-      />
+      {!hideHeader && (isGroup ? (
+        /* Заголовок группового диалога */
+        <div className="flex items-center justify-between gap-2 p-2 xs:p-2.5 sm:p-3 border-b">
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <div
+              className={[
+                'w-7 sm:w-8 h-7 sm:h-8 rounded-full flex items-center justify-center flex-shrink-0',
+                isChannel
+                  ? 'bg-rose-100 dark:bg-rose-900'
+                  : 'bg-violet-100 dark:bg-violet-900',
+              ].join(' ')}
+            >
+              {isChannel ? (
+                <Radio className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-rose-600 dark:text-rose-400" />
+              ) : (
+                <Users className="w-3.5 sm:w-4 h-3.5 sm:h-4 text-violet-600 dark:text-violet-400" />
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
+              <h3 className="font-medium text-xs sm:text-sm truncate leading-none">
+                {user.firstName ?? 'Группа'}
+              </h3>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                {isChannel ? 'Канал' : groupChatType === 'supergroup' ? 'Супергруппа' : 'Группа'}
+                {groupChatId && ` · ${groupChatId}`}
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <DialogHeader
+          user={user}
+          users={users}
+          formatUserName={formatUserName}
+          onSelectUser={handleSelectUser}
+          onClose={onClose}
+        />
+      ))}
 
-      {showWarning && (
+      {!isGroup && showWarning && (
         <DialogWarning
           onClose={() => {
             localStorage.setItem('dialog-warning-dismissed', 'true');
@@ -180,37 +289,86 @@ export function DialogPanel({
           <EmptyDialog />
         ) : (
           <div className="space-y-3 py-2">
-            {messages.map((message, index) => (
-              <MessageBubble
-                key={message.id || index}
-                message={message}
-                index={index}
-                user={message.messageType === 'user' ? user : null}
-                bot={message.messageType === 'bot' ? bot : null}
-                projectId={projectId}
-                tokenId={selectedTokenId}
-              />
-            ))}
+            {messages.map((message, index) => {
+              /** WS-запись с новым текстом, кнопками и раскладкой (если есть) */
+              const wsRec = wsEditedMessages.get(message.id);
+              /** Применяем оптимистичные правки и WS-правки к тексту и кнопкам сообщения */
+              const displayMessage = editedMessages.has(message.id)
+                ? { ...message, messageText: editedMessages.get(message.id)! }
+                : wsRec
+                ? {
+                    ...message,
+                    messageText: wsRec.messageText,
+                    messageData: {
+                      ...(message.messageData as object),
+                      ...(wsRec.buttons !== undefined ? { buttons: wsRec.buttons } : {}),
+                      ...(wsRec.buttonsPerRow !== undefined ? { buttonsPerRow: wsRec.buttonsPerRow } : {}),
+                    },
+                  }
+                : message;
+              return (
+                <MessageBubble
+                  key={message.id || index}
+                  message={displayMessage}
+                  index={index}
+                  user={message.messageType === 'user'
+                    ? (isGroup
+                        // В групповом диалоге — подставляем userId отправителя для аватарки
+                        ? { ...user, userId: message.userId } as typeof user
+                        : user)
+                    : null}
+                  bot={message.messageType === 'bot' ? bot : null}
+                  projectId={projectId}
+                  tokenId={selectedTokenId}
+                  isGroupDialog={isGroup}
+                  onDelete={(id) => deleteMessageMutation.mutate(id)}
+                  isDeleting={
+                    deleteMessageMutation.isPending &&
+                    deleteMessageMutation.variables === message.id
+                  }
+                  onEdit={(messageId, newText, originalText, buttons, buttonsPerRow) =>
+                    editMessageMutation.mutate({ messageId, messageText: newText, originalText, buttons, buttonsPerRow })
+                  }
+                  availableNodes={availableNodes}
+                  isEditing={
+                    editMessageMutation.isPending &&
+                    editMessageMutation.variables?.messageId === message.id
+                  }
+                />
+              );
+            })}
           </div>
         )}
       </ScrollArea>
 
       <Separator />
 
-      <DialogInput
-        isPending={sendMessageMutation.isPending}
-        projectId={projectId}
-        onSend={(text, mediaUrls) => {
-          sendMessageMutation.mutate({ messageText: text, mediaUrls });
-        }}
-      />
+      {/* Зона ввода */}
+      <div className="flex-shrink-0 max-h-[55%] overflow-y-auto">
+        <DialogInput
+          isPending={isGroup ? sendGroupMessageMutation.isPending : sendMessageMutation.isPending}
+          projectId={projectId}
+          availableNodes={availableNodes}
+          onSend={(text, mediaUrls, buttons, buttonsPerRow) => {
+            if (isGroup) {
+              sendGroupMessageMutation.mutate({ messageText: text, mediaUrls, buttons, buttonsPerRow });
+            } else {
+              sendMessageMutation.mutate({ messageText: text, mediaUrls, buttons, buttonsPerRow });
+            }
+          }}
+        />
 
-      <NodeSender
-        projectId={projectId}
-        selectedTokenId={selectedTokenId}
-        userId={user?.userId ? Number(user.userId) : undefined}
-        onSent={refetchMessages}
-      />
+        {/* NodeSender только для личных диалогов */}
+        {!isGroup && (
+          <NodeSender
+            projectId={projectId}
+            selectedTokenId={selectedTokenId}
+            userId={user?.userId ? Number(user.userId) : undefined}
+            onSent={refetchMessages}
+          />
+        )}
+      </div>
+
     </div>
   );
 }

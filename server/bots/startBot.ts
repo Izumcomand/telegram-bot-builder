@@ -3,6 +3,7 @@
  * @external child_process
  */
 import { spawn } from "node:child_process";
+import { workerManager } from './botWorkerManager';
 
 /**
  * Модуль для работы с URL
@@ -189,10 +190,10 @@ export async function startBot(projectId: number, token: string, tokenId: number
     const tokenSettings = await storage.getBotToken(tokenId);
     const launchMode = tokenSettings?.launchMode ?? 'polling';
     const webhookBaseUrl = tokenSettings?.webhookBaseUrl ?? null;
-    // Webhook активен если: режим webhook И задан baseUrl ИЛИ глобальный WEBHOOK_URL в env
-    const effectiveWebhookUrl = launchMode === 'webhook' && webhookBaseUrl
-      ? webhookBaseUrl
-      : process.env.WEBHOOK_URL ?? null;
+    // Webhook активен только если режим явно webhook
+    const effectiveWebhookUrl = launchMode === 'webhook'
+      ? (webhookBaseUrl || process.env.WEBHOOK_URL || null)
+      : null;
 
     // В polling режиме сбрасываем webhook чтобы избежать конфликтов
     // В webhook режиме — Python сам установит webhook при старте
@@ -305,10 +306,64 @@ export async function startBot(projectId: number, token: string, tokenId: number
       await clearBotLogs(projectId, tokenId);
     }
 
+    // ─── Режим воркера: запуск бота через worker pool вместо отдельного процесса ───
+    if (process.env.USE_WORKER_POOL !== 'false') {
+      console.log(`🏭 [WorkerPool] Запуск бота ${projectId}/${tokenId} через воркер...`);
+      console.log(`🏭 [WorkerPool] mainFile: ${mainFile}`);
+      try {
+        await workerManager.startBot(projectId, token, tokenId, mainFile, effectiveWebhookUrl ? {
+          webhookUrl: effectiveWebhookUrl,
+          webhookPort: 9000 + tokenId,
+        } : undefined);
+        console.log(`🏭 [WorkerPool] Бот ${projectId}/${tokenId} отправлен в воркер`);
+      } catch (workerError) {
+        console.error(`🏭 [WorkerPool] Ошибка запуска бота через воркер:`, workerError);
+        return { success: false, error: workerError instanceof Error ? workerError.message : 'Ошибка воркера' };
+      }
+
+      // Сохраняем в БД как обычно
+      const existingBotInstance = await storage.getBotInstanceByToken(tokenId);
+      if (existingBotInstance) {
+        await storage.updateBotInstance(existingBotInstance.id, {
+          status: 'running',
+          token,
+          processId: `worker_${projectId}`,
+          errorMessage: null,
+          startedAt: new Date()
+        });
+      } else {
+        await storage.createBotInstance({
+          projectId,
+          tokenId,
+          status: 'running',
+          token,
+          processId: `worker_${projectId}`,
+        });
+      }
+
+      // Создаём запись в истории запусков
+      await storage.createLaunchHistory({
+        projectId,
+        tokenId,
+        status: 'running',
+        processId: `worker_${projectId}`,
+        startedAt: new Date(),
+      });
+
+      // Рассылаем событие о запуске бота
+      void broadcastProjectEvent(projectId, {
+        type: 'bot-started',
+        projectId,
+        tokenId,
+        timestamp: new Date().toISOString(),
+      });
+
+      return { success: true, processId: `worker_${projectId}` };
+    }
+
     // Запускаем бота
-    const pythonPath = process.platform === 'win32'
-      ? 'C:\\Users\\1\\AppData\\Local\\Programs\\Python\\Python313\\python.exe'
-      : 'python3';
+    const pythonPath = process.env.PYTHON_PATH ||
+      (process.platform === 'win32' ? 'python' : 'python3');
     const botProcess = spawn(pythonPath, [mainFile], {
       stdio: ['pipe', 'pipe', 'pipe'],
       detached: false,

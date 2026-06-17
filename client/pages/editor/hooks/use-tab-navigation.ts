@@ -4,7 +4,7 @@
  * Управляет переключением между вкладками интерфейса редактора.
  */
 
-import { useCallback } from 'react';
+import { useCallback, startTransition } from 'react';
 import type { EditorTab, PreviousEditorTab } from '../types';
 
 /** Параметры хука навигации */
@@ -57,7 +57,14 @@ export function useTabNavigation({
       setPreviousTab(currentTab as PreviousEditorTab);
     }
 
-    setCurrentTab(tab);
+    // Для вкладки export обновляем синхронно чтобы избежать мелькания
+    if (tab === 'export') {
+      setCurrentTab(tab);
+    } else {
+      startTransition(() => {
+        setCurrentTab(tab);
+      });
+    }
 
     // Автосохранение при переключении
     if (tab === 'preview' && projectId && setLocation) {
@@ -70,11 +77,8 @@ export function useTabNavigation({
       if (projectId) {
         onSaveProject?.();
       }
-      // Открываем обе панели кода (редактор и боковую панель)
-      // Вызываем с небольшим delay, чтобы убедиться, что currentTab обновился
-      requestAnimationFrame(() => {
-        onOpenCodePanel?.();
-      });
+      // Открываем обе панели кода синхронно — startTransition уже гарантирует обновление currentTab
+      onOpenCodePanel?.();
     } else if (currentTab === 'export') {
       onCloseCodePanel?.();
       onRestoreCanvas?.();
@@ -89,9 +93,7 @@ export function useTabNavigation({
         onSaveProject?.();
       }
     } else if (tab === 'bot' || tab === 'users' || tab === 'user-ids') {
-      if (projectId) {
-        onSaveProject?.();
-      }
+      // Не вызываем onSaveProject — сохранение происходит при уходе с editor
     }
   }, [currentTab, setCurrentTab, setPreviousTab, onSaveProject, onOpenCodePanel, onCloseCodePanel, onRestoreCanvas, setLocation, projectId]);
 

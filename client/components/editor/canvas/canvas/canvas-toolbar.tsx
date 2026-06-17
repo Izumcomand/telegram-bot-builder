@@ -13,6 +13,8 @@ import { AutoLayoutButton } from './auto-layout-button';
 import { ClipboardButtons } from './clipboard-buttons';
 import { InterfaceToggles } from './interface-toggles';
 import { KeyboardShortcutsHelp } from './keyboard-shortcuts-help';
+import { NodeSearchButton } from './node-search-button';
+import { MarqueeSelectButton } from './marquee-select-button';
 import { Action } from './canvas';
 import { CanvasViewToggle } from '@/pages/editor/components/canvas-view-toggle';
 import type { CanvasView } from '@/pages/editor/components/canvas-view-toggle';
@@ -93,6 +95,16 @@ interface CanvasToolbarProps {
   canvasView?: CanvasView;
   /** Колбэк смены режима просмотра */
   onViewChange?: (view: CanvasView) => void;
+  /** Колбэк центрирования холста на узле (включает кнопку поиска узлов) */
+  onNodeFocus?: (nodeId: string) => void;
+  /** Управляемое состояние открытия поиска узлов (для Ctrl+F) */
+  searchOpen?: boolean;
+  /** Колбэк изменения состояния открытия поиска узлов */
+  onSearchOpenChange?: (open: boolean) => void;
+  /** Активен ли инструмент рамочного выделения */
+  marqueeActive?: boolean;
+  /** Колбэк переключения инструмента рамочного выделения */
+  onToggleMarquee?: () => void;
 }
 
 /**
@@ -138,6 +150,11 @@ export function CanvasToolbar({
   handleUndoSelected,
   canvasView,
   onViewChange,
+  onNodeFocus,
+  searchOpen,
+  onSearchOpenChange,
+  marqueeActive,
+  onToggleMarquee,
 }: CanvasToolbarProps) {
   return (
     <div data-canvas-toolbar className="absolute top-0 z-40 pointer-events-none w-full transition-all duration-300" style={{ left: 0, right: 0 }}>
@@ -189,11 +206,26 @@ export function CanvasToolbar({
               hasClipboardData={hasClipboardData}
             />
 
+            {/* Поиск узлов на текущем листе */}
+            {onNodeFocus && (
+              <NodeSearchButton
+                nodes={nodes}
+                onNodeFocus={onNodeFocus}
+                open={searchOpen}
+                onOpenChange={onSearchOpenChange}
+              />
+            )}
+
+            {/* Инструмент рамочного выделения нескольких узлов */}
+            {onToggleMarquee && (
+              <MarqueeSelectButton active={marqueeActive ?? false} onToggle={onToggleMarquee} />
+            )}
+
             {/* Р Р°Р·РґРµР»РёС‚РµР»СЊ */}
             <div className="h-6 w-px bg-slate-300/50 dark:bg-slate-600/50" />
 
-            {/* РљРЅРѕРїРєРё СѓРїСЂР°РІР»РµРЅРёСЏ РёРЅС‚РµСЂС„РµР№СЃРѕРј */}
-            {headerVisible === false && (onToggleHeader || onToggleSidebar || onToggleProperties || onToggleCanvas) && (
+            {/* Кнопки управления интерфейсом — показываются когда любая панель скрыта */}
+            {(headerVisible === false || sidebarVisible === false) && (onToggleHeader || onToggleSidebar || onToggleProperties || onToggleCanvas) && (
               <InterfaceToggles
                 headerVisible={headerVisible}
                 sidebarVisible={sidebarVisible}

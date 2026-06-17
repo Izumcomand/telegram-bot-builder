@@ -92,7 +92,7 @@ const DEFAULT_OPTIONS: HierarchicalLayoutOptions = {
 /**
  * Узлы, которые естественно являются входом сценария.
  */
-const ROOT_TYPES = new Set(['start', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'group_message_trigger', 'callback_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'managed_bot_updated_trigger']);
+const ROOT_TYPES = new Set(['start', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'group_message_trigger', 'callback_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'managed_bot_updated_trigger', 'schedule_trigger', 'userbot_edit_trigger']);
 
 /**
  * Узлы-сопровождающие, которые не должны вести себя как полноценный шаг сценария.
@@ -311,6 +311,20 @@ function inferConnectionsFromNodes(
       }
     }
 
+    /** Ветки узла параллельного запуска — связи как у condition */
+    if ((node.type as any) === 'parallel_split' && Array.isArray(data.parallelBranches)) {
+      for (const branch of data.parallelBranches as any[]) {
+        if (branch?.target) {
+          pushConnection({
+            fromId: node.id,
+            toId: branch.target,
+            type: 'button-goto',
+            buttonId: branch.id,
+          });
+        }
+      }
+    }
+
     const buttonsToUse = node.type === 'message' && linkedKeyboard && keyboardButtons.length > 0
       ? []
       : nodeButtons;
@@ -333,7 +347,16 @@ function inferConnectionsFromNodes(
       pushConnection({
         fromId: node.id,
         toId: data.autoTransitionTo,
-        type: node.type === 'command_trigger' || node.type === 'text_trigger' || (node.type as any) === 'managed_bot_updated_trigger' ? 'trigger-next' : 'auto-transition',
+        type: node.type === 'command_trigger' || node.type === 'text_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'schedule_trigger' || (node.type as any) === 'userbot_edit_trigger' ? 'trigger-next' : 'auto-transition',
+      });
+    }
+
+    // afterLoopTo — дополнительное соединение для узла loop (выход "Далее")
+    if ((node.type as any) === 'loop' && typeof data.afterLoopTo === 'string' && data.afterLoopTo) {
+      pushConnection({
+        fromId: node.id,
+        toId: data.afterLoopTo as string,
+        type: 'auto-transition',
       });
     }
 

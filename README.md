@@ -1,8 +1,11 @@
 <div align="center">
+
+  **🇷🇺 Русский** | [🇬🇧 English](README.en.md)
+
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/fedorabakumets/telegram-bot-builder/main/assets/images/bot_added_ui_visible.png?v=2">
-    <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/fedorabakumets/telegram-bot-builder/main/assets/images/bot_added_ui_visible.png?v=2">
-    <img alt="Telegram Bot Builder" src="https://raw.githubusercontent.com/fedorabakumets/telegram-bot-builder/main/assets/images/bot_added_ui_visible.png?v=2" width="200">
+    <source media="(prefers-color-scheme: dark)" srcset="assets/images/bot_added_ui_visible.png">
+    <source media="(prefers-color-scheme: light)" srcset="assets/images/bot_added_ui_visible.png">
+    <img alt="Telegram Bot Builder" src="assets/images/bot_added_ui_visible.png" width="600">
   </picture>
   
   <h1>
@@ -60,8 +63,8 @@
 ### 🏗️ Архитектура системы
 
 <div align="center">
-  <img src="https://img.shields.io/badge/Архитектура-Микросервисы-blue?style=for-the-badge&logo=architecture" alt="Architecture"/>
-  <img src="https://img.shields.io/badge/Паттерн-MVC-green?style=for-the-badge&logo=pattern" alt="Pattern"/>
+  <img src="https://img.shields.io/badge/Архитектура-Монолит-blue?style=for-the-badge&logo=architecture" alt="Architecture"/>
+  <img src="https://img.shields.io/badge/Паттерн-Модульный-green?style=for-the-badge&logo=pattern" alt="Pattern"/>
   <img src="https://img.shields.io/badge/API-REST-orange?style=for-the-badge&logo=api" alt="API"/>
 </div>
 
@@ -142,11 +145,11 @@
 <summary><strong>📋 Подробное описание потока</strong> (нажми для раскрытия)</summary>
 
 1. **👤 Пользователь** создает схему бота в визуальном редакторе
-2. **🎨 Frontend** отправляет изменения через WebSocket для реального времени
+2. **🎨 Frontend** отправляет изменения через REST API, предлагает сохранить и перезапустить бота
 3. **📡 API Server** валидирует данные и сохраняет в PostgreSQL
 4. **🤖 Generator** преобразует схему в Python код с aiogram
-5. **☁️ Deployment** автоматически деплоит на Railway
-6. **📱 Telegram** получает webhook и начинает обрабатывать сообщения
+5. **▶️ Запуск** — бот запускается как Python-процесс на сервере (Worker Pool)
+6. **📱 Telegram** получает сообщения через polling (по умолчанию) или webhook
 7. **📊 Analytics** собирает статистику использования в реальном времени
 
 </details>
@@ -163,86 +166,58 @@
 ┣ 📂 client/                     # 🎨 React Frontend
 ┃ ┣ 📂 components/               # UI компоненты
 ┃ ┃ ┣ 📂 editor/                 # Визуальный редактор
-┃ ┃ ┃ ┣ 📂 bot/                  # Компоненты бота
-┃ ┃ ┃ ┣ 📂 canvas/               # Холст редактора
-┃ ┃ ┃ ┣ 📂 code/                 # Редактор кода
-┃ ┃ ┃ ┣ 📂 database/             # Управление БД
-┃ ┃ ┃ ┣ 📂 google-sheets/        # Интеграция с Google Sheets
-┃ ┃ ┃ ┣ 📂 groups/               # Управление группами
-┃ ┃ ┃ ┣ 📂 properties/           # Панель свойств
-┃ ┃ ┃ ┣ 📂 template/             # Шаблоны
-┃ ┃ ┃ ┗ 📄 emoji-picker.tsx      # Выбор эмодзи
-┃ ┃ ┣ 📂 layout/                 # Компоненты макета
-┃ ┃ ┣ 📂 media/                  # Медиа компоненты
+┃ ┃ ┃ ┣ 📂 app-sidebar/          # Навигация по вкладкам
+┃ ┃ ┃ ┣ 📂 analytics/            # Панель аналитики
+┃ ┃ ┃ ┣ 📂 bot/                  # Управление ботами
+┃ ┃ ┃ ┣ 📂 broadcast/            # Рассылки
+┃ ┃ ┃ ┣ 📂 canvas/               # Холст редактора (drag & drop)
+┃ ┃ ┃ ┣ 📂 code/                 # Вкладка «Код бота»
+┃ ┃ ┃ ┣ 📂 dialogs/              # Диалоги с пользователями
+┃ ┃ ┃ ┣ 📂 properties/           # Панель свойств блоков
+┃ ┃ ┃ ┣ 📂 sidebar/              # Панель компонентов
+┃ ┃ ┃ ┗ 📂 users/                # Вкладка «Пользователи»
 ┃ ┃ ┣ 📂 ui/                     # Базовые UI элементы
-┃ ┃ ┗ 📄 theme-provider.tsx      # Провайдер темы
-┃ ┣ 📂 contexts/                 # React контексты
+┃ ┃ ┗ 📂 media/                  # Медиа компоненты
 ┃ ┣ 📂 hooks/                    # React хуки
-┃ ┣ 📂 lib/                      # Библиотеки и утилиты
-┃ ┃ ┣ 📂 generate/               # Генерация кода
-┃ ┃ ┣ 📂 database/               # Работа с БД
-┃ ┃ ┣ 📂 MessageHandlers/        # Обработчики сообщений
-┃ ┃ ┣ 📂 CommandHandler/         # Обработчики команд
-┃ ┃ ┣ 📂 Keyboard/               # Генерация клавиатур
-┃ ┃ ┣ 📂 MediaHandler/           # Обработка медиа
-┃ ┃ ┣ 📂 UserHandler/            # Обработка пользователей
-┃ ┃ ┣ 📂 Conditional/            # Условная логика
-┃ ┃ ┣ 📂 scaffolding/            # Каркас генерации
-┃ ┃ ┗ 📄 bot-generator.ts        # Генератор ботов
 ┃ ┣ 📂 pages/                    # Страницы приложения
+┃ ┣ 📂 storage/                  # Локальное хранилище
 ┃ ┣ 📂 types/                    # TypeScript типы
 ┃ ┣ 📂 utils/                    # Утилиты
-┃ ┣ 📄 App.tsx                   # Главный компонент
-┃ ┗ 📄 main.tsx                  # Точка входа
+┃ ┗ 📄 App.tsx                   # Главный компонент
 ┣ 📂 server/                     # 🖥️ Express Backend
 ┃ ┣ 📂 auth/                     # Аутентификация
-┃ ┣ 📂 bots/                     # Управление ботами
-┃ ┃ ┣ 📄 startBot.ts             # Запуск бота
-┃ ┃ ┣ 📄 stopBot.ts              # Остановка бота
-┃ ┃ ┗ 📄 restartBotIfRunning.ts  # Перезапуск бота
-┃ ┣ 📂 database/                 # Работа с БД
-┃ ┃ ┣ 📄 db.ts                   # Подключение к БД
-┃ ┃ ┣ 📄 db-routes.ts            # Маршруты БД
-┃ ┃ ┣ 📄 db-utils.ts             # Утилиты БД
-┃ ┃ ┗ 📄 init-db.ts              # Инициализация БД
+┃ ┣ 📂 bots/                     # Запуск/остановка ботов
+┃ ┣ 📂 database/                 # Работа с PostgreSQL
 ┃ ┣ 📂 files/                    # Работа с файлами
-┃ ┣ 📂 google-sheets/            # Интеграция с Google Sheets
+┃ ┣ 📂 handlers/                 # Обработчики запросов
+┃ ┣ 📂 middleware/               # Middleware
+┃ ┣ 📂 migrations/               # Миграции БД
+┃ ┣ 📂 redis/                    # Redis (события, кэш)
 ┃ ┣ 📂 routes/                   # API маршруты
-┃ ┃ ┣ 📄 routes.ts               # Основные маршруты
-┃ ┃ ┣ 📄 setupProjectRoutes.ts   # Маршруты проектов
-┃ ┃ ┣ 📄 setupBotManagementRoutes.ts  # Управление ботами
-┃ ┃ ┗ 📄 setupGithubPushRoute.ts # GitHub синхронизация
-┃ ┣ 📂 storages/                 # Хранилища
-┃ ┣ 📂 telegram/                 # Telegram API
-┃ ┃ ┣ 📄 telegram-client.ts      # Клиент Telegram
-┃ ┃ ┣ 📄 telegram-media.ts       # Медиа Telegram
-┃ ┃ ┗ 📄 auth-middleware.ts      # Аутентификация Telegram
-┃ ┣ 📂 terminal/                 # Терминал
+┃ ┣ 📂 services/                 # Бизнес-логика
+┃ ┣ 📂 storages/                 # Хранилища данных
+┃ ┣ 📂 telegram/                 # Telegram API клиент
+┃ ┣ 📂 templates/                # Шаблоны генерации
+┃ ┣ 📂 terminal/                 # Терминал ботов
 ┃ ┣ 📂 utils/                    # Утилиты сервера
 ┃ ┗ 📄 index.ts                  # Точка входа сервера
-┣ 📂 shared/                     # 🔗 Общие модули
-┃ ┣ 📄 schema.ts                 # Drizzle ORM схемы
-┃ ┗ 📄 scaffolding-wrapper.ts    # Обёртка генерации
-┣ 📂 config/                     # ⚙️ Конфигурация
-┃ ┗ 📂 google-auth/              # Google OAuth
-┣ 📂 bots/                       # 🤖 Сгенерированные боты
-┃ ┗ 📄 *.py                      # Python боты
-┣ 📂 migrations/                 # 🗄️ Миграции БД
-┣ 📂 uploads/                    # 📁 Загруженные файлы
-┣ 📂 assets/                     # 🖼️ Ресурсы
-┃ ┗ 📂 images/                   # Изображения
+┣ 📂 shared/                     # 🔗 Общие модули (схемы, типы)
+┣ 📂 bots/                       # 🤖 Сгенерированные Python-боты
 ┣ 📂 docs/                       # 📚 Документация
-┃ ┣ 📂 deployment/               # Деплой
-┃ ┣ 📂 development/              # Разработка
-┃ ┣ 📂 features/                 # Функции
-┃ ┣ 📂 analysis/                 # Анализ
-┃ ┗ 📄 COMPONENTS.md             # Компоненты
-┣ 📂 scripts/                    # 📜 Скрипты
-┣ 📂 dist/                       # 📦 Сбилденные файлы
+┃ ┣ 📂 analysis/                 # Анализ архитектуры
+┃ ┣ 📂 deployment/               # Инструкции по деплою
+┃ ┣ 📂 development/              # Для разработчиков
+┃ ┣ 📂 features/                 # Описание фич
+┃ ┣ 📂 futures/                  # Планы развития
+┃ ┗ 📂 releases/                 # Заметки к релизам
+┣ 📂 migrations/                 # 🗄️ Миграции Drizzle ORM
+┣ 📂 uploads/                    # 📁 Загруженные медиафайлы
+┣ 📂 scripts/                    # 📜 Вспомогательные скрипты
 ┣ 📄 package.json                # 📦 Зависимости Node.js
 ┣ 📄 tsconfig.json               # ⚙️ Настройки TypeScript
 ┣ 📄 vite.config.ts              # ⚡ Конфигурация Vite
 ┣ 📄 drizzle.config.ts           # 🗄️ Настройки Drizzle ORM
+┣ 📄 docker-compose.yml          # 🐳 Docker конфигурация
 ┗ 📄 .env.example                # 🔐 Пример переменных окружения
 ```
 
@@ -250,628 +225,127 @@
 
 ---
 
-## 📡 API Endpoints
+## 📡 API
 
 <div align="center">
   <img src="https://img.shields.io/badge/API-RESTful-blue?style=for-the-badge&logo=api" alt="API"/>
   <img src="https://img.shields.io/badge/Формат-JSON-green?style=for-the-badge&logo=json" alt="JSON"/>
-  <img src="https://img.shields.io/badge/Аутентификация-JWT-orange?style=for-the-badge&logo=auth" alt="Auth"/>
+  <img src="https://img.shields.io/badge/Аутентификация-Session-orange?style=for-the-badge&logo=auth" alt="Auth"/>
 </div>
 
-<details>
-<summary><strong>🔗 Основные API маршруты</strong> (нажми для раскрытия)</summary>
+> ⚠️ **Безопасность:** На данный момент многие эндпоинты открыты и не требуют аутентификации. Проект находится в стадии активной разработки — авторизация и изоляция данных между пользователями планируются в будущих релизах. Следите за обновлениями в нашем [Telegram-канале](https://t.me/botcraft_studio) и [чате](https://t.me/bot_builder_chat).
 
-<table>
-<tr>
-<th>🎯 Категория</th>
-<th>📡 Endpoint</th>
-<th>📝 Описание</th>
-</tr>
+API маршруты находятся в директории `server/routes/`:
 
-<tr>
-<td rowspan="4"><strong>📋 Проекты</strong></td>
-<td><code>GET /api/projects</code></td>
-<td>Список проектов пользователя</td>
-</tr>
-<tr>
-<td><code>POST /api/projects</code></td>
-<td>Создать новый проект</td>
-</tr>
-<tr>
-<td><code>PUT /api/projects/{id}</code></td>
-<td>Обновить проект</td>
-</tr>
-<tr>
-<td><code>DELETE /api/projects/{id}</code></td>
-<td>Удалить проект</td>
-</tr>
-
-<tr>
-<td rowspan="4"><strong>🧩 Узлы</strong></td>
-<td><code>GET /api/projects/{id}/nodes</code></td>
-<td>Получить схему бота</td>
-</tr>
-<tr>
-<td><code>POST /api/projects/{id}/nodes</code></td>
-<td>Добавить узел</td>
-</tr>
-<tr>
-<td><code>PUT /api/projects/{id}/nodes/{nodeId}</code></td>
-<td>Обновить узел</td>
-</tr>
-<tr>
-<td><code>DELETE /api/projects/{id}/nodes/{nodeId}</code></td>
-<td>Удалить узел</td>
-</tr>
-
-<tr>
-<td rowspan="4"><strong>🤖 Боты</strong></td>
-<td><code>POST /api/bots/{id}/generate</code></td>
-<td>Сгенерировать Python код</td>
-</tr>
-<tr>
-<td><code>POST /api/bots/{id}/deploy</code></td>
-<td>Задеплоить бота</td>
-</tr>
-<tr>
-<td><code>GET /api/bots/{id}/status</code></td>
-<td>Статус бота</td>
-</tr>
-<tr>
-<td><code>POST /api/bots/{id}/stop</code></td>
-<td>Остановить бота</td>
-</tr>
-
-<tr>
-<td rowspan="3"><strong>📁 Медиа</strong></td>
-<td><code>POST /api/media/upload</code></td>
-<td>Загрузить файл</td>
-</tr>
-<tr>
-<td><code>GET /api/media/{id}</code></td>
-<td>Скачать файл</td>
-</tr>
-<tr>
-<td><code>DELETE /api/media/{id}</code></td>
-<td>Удалить файл</td>
-</tr>
-
-<tr>
-<td rowspan="3"><strong>📊 Статистика</strong></td>
-<td><code>GET /api/bots/{id}/stats</code></td>
-<td>Статистика использования</td>
-</tr>
-<tr>
-<td><code>GET /api/bots/{id}/users</code></td>
-<td>Пользователи бота</td>
-</tr>
-<tr>
-<td><code>GET /api/bots/{id}/messages</code></td>
-<td>История сообщений</td>
-</tr>
-</table>
-
-</details>
+| Директория | Что содержит |
+|-----------|-------------|
+| `server/routes/projectRoutes/` | CRUD проектов, обновление схемы |
+| `server/routes/botManagement/` | Запуск, остановка, перезапуск ботов |
+| `server/routes/tables/` | Работа с таблицами данных |
+| `server/routes/setup/` | Setup Wizard (первоначальная настройка) |
+| `server/routes/setupWebhookRoutes.ts` | Приём webhook-апдейтов от Telegram |
+| `server/routes/routes.ts` | Главный файл регистрации всех маршрутов |
 
 ---
 ## 🎯 Основные возможности
 
-- **🎨 Создавайте ботов перетаскиванием** - никакого кода, просто перемещайте блоки мышкой
-- **💬 Отправляйте сообщения** - с форматированием, кнопками и медиафайлами
-- **🎨 Красивые интерфейсы** - встроенные и обычные клавиатуры
-- **📁 Работа с медиа** - фото, видео, аудио, документы
-- **📝 Сбор данных** - формы для сбора информации от пользователей
-- **🧠 Логика и условия** - "если произошло то-то, то сделай это"
-- **👥 База пользователей** - автоматически собирает информацию о пользователях
-- **📊 Статистика** - смотрите, кто написал боту, какие команды использует
-- **🎭 Светлая и темная темы** - удобно работать днем и ночью
-- **📱 Работает на мобильных телефонах** - создавайте ботов с планшета или смартфона, интерфейс адаптирован для всех устройств
+### 🎨 Визуальный редактор
+- **Drag & Drop** — перетаскивайте блоки на холст, соединяйте стрелками
+- **Набор блоков постоянно растёт** — новые ноды добавляются с каждым обновлением
+- **Светлая и тёмная темы** — удобно работать днём и ночью
+- **Адаптивный интерфейс** — работает на десктопе, планшете и смартфоне
 
-</details>
+### 💬 Сообщения и триггеры
+- **Команды** — /start, /help и любые пользовательские команды
+- **Текстовые триггеры** — реакция на конкретные слова или любое сообщение
+- **Исходящие сообщения** — триггер на отправку сообщений ботом
+- **Медиафайлы** — фото, видео, аудио, документы
+- **Сбор данных** — сохранение ответов пользователей в переменные
+- **Редактирование и пересылка** — изменение отправленных сообщений, пересылка в другие чаты
+
+### ⌨️ Клавиатуры
+- **Inline-кнопки** — с callback-данными и обработкой нажатий
+- **Reply-клавиатуры** — обычные кнопки под полем ввода
+- **Answer callback query** — ответ на нажатие inline-кнопки
+
+### 👥 Группы и форумы
+- **Триггеры на сообщения в группах** — бот реагирует на сообщения участников
+- **Создание тем в форумах** — автоматическое создание топиков
+
+### 🔌 Интеграции
+- **HTTP-запросы** — обращение к любым внешним API
+- **PostgreSQL** — прямые SQL-запросы к базе данных из бота
+- **Условная логика** — ветвления "если... то..."
+- **Переменные** — хранение и использование данных между шагами
+- **Конвертация файлов** — преобразование форматов
+
+### 🖥️ Вкладки конструктора
+- **🎨 Редактор** — визуальный холст с нодами, drag & drop построение сценария
+- **📋 Код** — просмотр, копирование и скачивание сгенерированного Python-кода
+- **🤖 Бот** — управление токенами, запуск/остановка, статус, настройки
+- **👥 Пользователи** — база всех, кто писал боту
+- **💬 Диалоги** — переписки бота с пользователями в реальном времени
+- **📢 Рассылки** — массовая отправка сообщений по базе
+- **📊 Аналитика** — статистика использования бота
+- **📑 Таблицы** — таблицы данных проекта (контент, настройки)
+
+> 💡 Вкладки и блоки постоянно обновляются и дополняются с каждым релизом.
 
 ---
 
-## ☁️ Деплой в облако
+## ☁️ Запуск и деплой бота
 
-### Railway (рекомендуется)
+### ▶️ Вариант 1: Запуск из конструктора (кнопка «Запустить»)
+
+Бот запускается прямо из интерфейса конструктора:
+- **На официальном сайте** — пока работает нестабильно, актуальную ссылку можно получить в чате [@bot_builder_chat](https://t.me/bot_builder_chat). Скоро выпускаем глобально!
+- **Self-hosted (рекомендуется)** — разверните конструктор у себя и запускайте ботов из своей инфраструктуры
+
+### 📦 Вариант 2: Скачать код и запустить где угодно
+
+Из конструктора (официальный сайт или self-hosted):
+1. Откройте вкладку **«Код бота»**
+2. Скачайте сгенерированный `.py` файл
+3. Отредактируйте под свои нужды (код полностью ваш, никакого чёрного ящика)
+4. Запустите на любом сервере, VPS или домашнем компьютере — независимо от конструктора
+
+### 🖥️ Вариант 3: Self-hosted конструктор
+
+Разверните Bot Builder на своём сервере — и создавайте/запускайте ботов в своей инфраструктуре:
+
+#### Railway (рекомендуется)
 
 1. Зарегистрируйтесь на [Railway.app](https://railway.app/)
 2. Создайте новый проект
 3. Подключите репозиторий с кодом
-5. Добавьте переменные окружения (см. [docs/deployment/RAILWAY_DEPLOY.md](docs/deployment/RAILWAY_DEPLOY.md))
-6. Создайте PostgreSQL базу данных
-7. Запустите миграции базы данных
+4. Добавьте переменные окружения (см. [docs/deployment/RAILWAY_QUICK_DEPLOY.md](docs/deployment/RAILWAY_QUICK_DEPLOY.md))
+5. Создайте PostgreSQL базу данных
+6. Запустите миграции базы данных
 
-Подробные инструкции по деплою на Railway смотрите в файле [docs/deployment/RAILWAY_DEPLOY.md](docs/deployment/RAILWAY_DEPLOY.md).
+Подробные инструкции: [docs/deployment/RAILWAY_QUICK_DEPLOY.md](docs/deployment/RAILWAY_QUICK_DEPLOY.md)
 
----
-
-
-## 📜 Пошаговая инструкция
-### Требования
-- **Node.js** ≥ 18.0.0
-- **PostgreSQL** ≥ 15
-- **Python** ≥ 3.10 (для сгенерированных ботов)
-- **Git**
-<details>
-<summary><strong>Шаг 1: Обновление системы и установка зависимостей</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux (Ubuntu/Debian)</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-**Способ 1: Через терминал (рекомендуется):**
-
-**Ubuntu/Debian:**
-```bash
-sudo apt update && sudo apt install -y git
-```
-
-**Fedora/CentOS:**
-```bash
-sudo dnf install -y git
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -S git
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [git-scm.com/install/linux](https://git-scm.com/install/linux)
-- Выберите ваш дистрибутив
-- Следуйте инструкции по установке
-
-**Проверка установки:**
-```bash
-git --version
-```
-
-</td>
-<td valign="top">
-
-**Способ 1: Через winget (рекомендуется):**
-```powershell
-winget install --id Git.Git -e --source winget
-```
-
-**Способ 2: Через установщик:**
-- Скачайте с [git-scm.com/install/windows](https://git-scm.com/install/windows)
-- Запустите `.exe` файл
-- Оставьте настройки по умолчанию (нажимайте "Next")
-
-**Проверка установки:**
-Откройте PowerShell от имени администратора (`Win + X` → "Терминал (администратор)"):
-```powershell
-git --version
-```
-
-> Если версия не отображается, перезапустите PowerShell
-
-</td>
-<td valign="top">
-
-**Способ 1: Через Homebrew (рекомендуется):**
-```bash
-# Установка Homebrew (если не установлен)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# Установка Git
-brew install git
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [git-scm.com/install/mac](https://git-scm.com/install/mac)
-- Скачайте установщик для macOS (`.dmg`)
-- Откройте `.dmg` файл и перетащите Git в Applications
-
-**Проверка установки:**
-```bash
-git --version
-```
-
-> Homebrew — менеджер пакетов для macOS, упрощает установку программ
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 2: Установка Node.js LTS</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-**Способ 1: Через терминал (рекомендуется):**
-```bash
-curl -fsSL https://deb.nodesource.com/setup_lts.x | sudo -E bash -
-sudo apt install -y nodejs
-node -v && npm -v
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [nodejs.org](https://nodejs.org/)
-- Скачайте `.deb` или `.rpm` пакет
-- Установите: `sudo dpkg -i nodejs_*.deb`
-
-</td>
-<td valign="top">
-
-**Способ 1: Через winget:**
-```powershell
-winget install OpenJS.NodeJS.LTS
-node -v && npm -v
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [nodejs.org](https://nodejs.org/)
-- Скачайте установщик (`.msi`)
-- Запустите и следуйте инструкциям
-- Проверьте установку:
-```powershell
-node -v
-npm -v
-```
-
-</td>
-<td valign="top">
-
-**Способ 1: Через Homebrew:**
-```bash
-brew install node@lts
-node -v && npm -v
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [nodejs.org](https://nodejs.org/)
-- Скачайте установщик (`.pkg`)
-- Запустите и следуйте инструкциям
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 3: Установка PostgreSQL</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-**Способ 1: Через терминал:**
-```bash
-sudo apt install -y postgresql postgresql-contrib
-sudo systemctl enable postgresql
-sudo systemctl start postgresql
-```
-
-**Способ 2: Официальный репозиторий:**
-- Посетите [postgresql.org/download/linux](https://www.postgresql.org/download/linux/)
-- Выберите дистрибутив
-- Следуйте инструкции
-
-</td>
-<td valign="top">
-
-**Способ 1: Через winget:**
-```powershell
-winget install PostgreSQL.PostgreSQL
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [postgresql.org/download/windows](https://www.postgresql.org/download/windows/)
-- Скачайте установщик
-- Запустите и запомните пароль `postgres`
-
-</td>
-<td valign="top">
-
-**Способ 1: Через Homebrew:**
-```bash
-brew install postgresql@15
-brew services start postgresql@15
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [postgresql.org/download/macosx](https://www.postgresql.org/download/macosx/)
-- Скачайте установщик
-- Запустите и следуйте инструкциям
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 4: Установка Python 3</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-**Способ 1: Через терминал:**
-```bash
-sudo apt install -y python3 python3-venv python3-pip
-python3 --version
-```
-
-**Способ 2: Официальный сайт:**
-- Посетите [python.org/downloads](https://www.python.org/downloads/)
-- Выберите версию для Linux
-- Следуйте инструкции по компиляции
-
-</td>
-<td valign="top">
-
-**Способ 1: Через winget:**
-```powershell
-winget install Python.Python.3.12
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [python.org/downloads](https://www.python.org/downloads/)
-- Скачайте установщик
-- При установке отметьте **"Add Python to PATH"**
-- Проверьте установку:
-```powershell
-python --version
-```
-
-</td>
-<td valign="top">
-
-**Способ 1: Через Homebrew:**
-```bash
-brew install python
-python3 --version
-```
-
-**Способ 2: С сайта:**
-- Перейдите на [python.org/downloads](https://www.python.org/downloads/)
-- Скачайте установщик для macOS (`.pkg`)
-- Запустите и следуйте инструкциям
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 5: Настройка базы данных</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-```bash
-sudo -u postgres psql
-```
-
-```sql
-CREATE USER tbb WITH PASSWORD 'builder2025!' LOGIN;
-CREATE DATABASE telegram_bot_builder OWNER tbb;
-GRANT ALL PRIVILEGES ON DATABASE telegram_bot_builder TO tbb;
-GRANT ALL ON SCHEMA public TO tbb;
-\q
-```
-
-</td>
-<td valign="top">
-
-```powershell
-psql -U postgres
-```
-
-```sql
-CREATE USER tbb WITH PASSWORD 'builder2025!' LOGIN;
-CREATE DATABASE telegram_bot_builder OWNER tbb;
-GRANT ALL PRIVILEGES ON DATABASE telegram_bot_builder TO tbb;
-GRANT ALL ON SCHEMA public TO tbb;
-\q
-```
-
-</td>
-<td valign="top">
-
-```bash
-psql postgres
-```
-
-```sql
-CREATE USER tbb WITH PASSWORD 'builder2025!' LOGIN;
-CREATE DATABASE telegram_bot_builder OWNER tbb;
-GRANT ALL PRIVILEGES ON DATABASE telegram_bot_builder TO tbb;
-GRANT ALL ON SCHEMA public TO tbb;
-\q
-```
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 6: Клонирование проекта</strong></summary>
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-```bash
-cd /opt
-sudo git clone https://github.com/fedorabakumets/telegram-bot-builder.git
-sudo chown -R "$USER":"$USER" telegram-bot-builder
-cd telegram-bot-builder
-```
-
-</td>
-<td valign="top">
-
-```powershell
-mkdir C:\projects
-cd C:\projects
-git clone https://github.com/fedorabakumets/telegram-bot-builder.git
-cd telegram-bot-builder
-```
-
-</td>
-<td valign="top">
-
-```bash
-mkdir -p ~/projects
-cd ~/projects
-git clone https://github.com/fedorabakumets/telegram-bot-builder.git
-cd telegram-bot-builder
-```
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 7: Настройка окружения</strong></summary>
-
-**Пример `.env` для всех систем:**
-```env
-NODE_ENV=development
-PORT=5000
-DATABASE_URL=postgresql://tbb:builder2025!@localhost:5432/telegram_bot_builder
-```
-
-<table>
-<tr>
-<th width="33%">🐧 Linux</th>
-<th width="33%">🏁 Windows</th>
-<th width="33%">🍎 macOS</th>
-</tr>
-<tr>
-<td valign="top">
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-</td>
-<td valign="top">
-
-```powershell
-copy .env.example .env
-notepad .env
-```
-
-</td>
-<td valign="top">
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-</td>
-</tr>
-</table>
-
-</details>
-
----
-
-<details>
-<summary><strong>Шаг 8: Установка зависимостей и запуск</strong></summary>
-
-**1. Установка зависимостей:**
-```bash
-npm install
-```
-
-**2. Запуск приложения:**
-
-| Режим | Команда | Описание |
-|-------|---------|----------|
-| **🧪 Разработка** | `npm run dev` | Запуск с автоперезагрузкой при изменениях |
-| **🚀 Продакшен** | `npm run build` → `npm run start` | Сборка и запуск готовой версии |
-
-✅ **Готово!** Приложение доступно по адресу: `http://localhost:5000`
-
-</details>
-
----
-
-<details>
-<summary><strong>🐳 Альтернатива: Docker (любая ОС)</strong></summary>
-
-**Требования:** Docker и Docker Compose
+#### Docker
 
 ```bash
 git clone https://github.com/fedorabakumets/telegram-bot-builder.git
 cd telegram-bot-builder
 docker compose up -d
-docker compose logs -f
 ```
 
-**Полезные команды:**
+#### Ручная установка (любая ОС)
 
-```bash
-docker compose down        # Остановить
-docker compose build --no-cache  # Пересобрать
-docker compose logs -f     # Логи
-```
+См. пошаговую инструкцию ниже.
 
-✅ **Готово!** Приложение доступно по адресу: `http://localhost:5000`
+---
 
-</details>
+
+## 📜 Пошаговая инструкция
+
+Подробное руководство по установке для Windows, macOS и Linux (Git, Node.js, PostgreSQL, Redis, Python, настройка БД, клонирование, запуск):
+
+👉 **[docs/development/INSTALLATION.md](docs/development/INSTALLATION.md)**
+
+> 🐳 **Быстрый старт:** `docker compose up -d` — и всё работает без ручной настройки.
 
 > 💡 **Нужно обновить проект?** См. [🔄 Как обновить проект с GitHub](docs/development/HOW_TO_UPDATE.md)
 
@@ -920,69 +394,65 @@ docker compose logs -f     # Логи
 ## 🧩 Типы блоков
 
 <details>
-<summary><strong>Элементы для построения</strong> (нажми для раскрытия)</summary>
+<summary><strong>Полный список доступных блоков</strong> (нажми для раскрытия)</summary>
 
-### 📨 Сообщения и контент
+### 📨 Сообщения и триггеры
 
 | Блок | Что он делает |
 |------|---------------|
-| **💬 Текстовое сообщение** | Отправляет текст пользователю (можно добавить медиафайлы) |
-| **🎭 Стикер** | Отправляет анимированный стикер |
-| **🎤 Голосовое сообщение** | Отправляет голосовое сообщение |
-| **📍 Геолокация** | Отправляет карту с координатами |
-| **📇 Контакт** | Поделиться контактом |
+| **🔔 Триггер команды** | Срабатывает при вводе команды (/start, /help, любая своя) |
+| **💬 Триггер текста** | Срабатывает на конкретное текстовое сообщение |
+| **📩 Триггер входящего сообщения** | Срабатывает на каждое входящее сообщение |
+| **📤 Триггер исходящего сообщения** | Срабатывает когда бот отправляет сообщение |
+| **💬 Текстовое сообщение** | Отправляет текст пользователю (поддержка Markdown) |
+| **📁 Медиафайл** | Отправляет фото, видео, аудио или документ |
+| **💾 Сохранить ответ в переменную** | Сохраняет ответ пользователя для дальнейшего использования |
+| **✏️ Редактировать сообщение** | Редактирует текст или кнопки уже отправленного сообщения |
+| **↗️ Переслать сообщение** | Пересылка сообщения в другой чат |
+
+### ⌨️ Клавиатуры
+
+| Блок | Что он делает |
+|------|---------------|
+| **🔘 Триггер inline-кнопки** | Срабатывает когда пользователь нажимает inline-кнопку |
+| **🔔 Триггер нажатия кнопки** | Срабатывает на каждое нажатие callback-кнопки |
+| **⌨️ Клавиатура** | Отправляет сообщение с reply-клавиатурой |
+| **✅ Answer callback query** | Отвечает на нажатие inline-кнопки (уведомление/alert) |
+
+### 👥 Группы
+
+| Блок | Что он делает |
+|------|---------------|
+| **👥 Триггер сообщений в группе** | Срабатывает на сообщения в групповых чатах |
+| **📋 Создать тему форума** | Создаёт новый топик в форум-группе |
+
+### 🔌 Интеграции и логика
+
+| Блок | Что он делает |
+|------|---------------|
+| **🌐 HTTP-запрос** | Отправляет запрос к любому внешнему API |
+| **🗄️ PostgreSQL запрос** | Выполняет SQL-запрос к базе данных |
+| **🔀 Условие** | Ветвление логики: "если... то... иначе..." |
+| **📝 Установить переменную** | Сохраняет значение в переменную для использования в других блоках |
+| **📄 Конвертация файлов** | Преобразование файлов между форматами |
 
 ### 📦 Медиафайлы в сообщениях
 
-В свойствах каждого **текстового сообщения** вы можете загрузить и прикрепить:
-
-- **📸 Фотографии** - изображения в формате JPG, PNG
-- **🎬 Видео** - видеоролики
-- **🎵 Аудио файлы** - музыка и голосовые записи
-- **📄 Документы** - файлы PDF, Word, Excel и другие
-- **🎤 Аудиосообщения** - голосовые сообщения от пользователя
-
-**Или используйте отдельный блок:**
-- **🎤 Голосовое сообщение** - специальный блок для отправки чистых аудио сообщений
-
-**Как использовать:**
-1. Выберите блок "Текстовое сообщение"
-2. В панели свойств (справа) найдите раздел с медиафайлами
-3. Загрузите файл со своего компьютера
-4. Бот будет отправлять его вместе с текстом!
-
-### ⚙️ Команды (можно добавлять свои!)
-
-Встроенные команды: **/start**, **/help**, **/settings**, **/menu**
-
-**Важно:** Вы можете добавить любые свои команды! Например:
-- `/price` - показать цены
-- `/order` - оформить заказ
-- `/support` - получить поддержку
-- `/about` - информация о компании
-
-### 👥 Управление пользователями
-
-- **Заблокировать пользователя** - запретить участию в группе
-- **Разблокировать** - снять блокировку с участника
-- **Заглушить пользователя** - ограничить право голоса участника
-- **Снять ограничения** - восстановить права участника
-- **Исключить пользователя** - удалить участника из группы
-
-### 📝 Управление контентом
-
-- **Закрепить сообщение** - закрепить сообщение в группе
-- **Открыть сообщение** - опубликовать сообщение в группе
-- **Удалить сообщение** - удалить сообщение из группы
-
+В свойствах текстового сообщения можно прикрепить:
+- **📸 Фотографии** — JPG, PNG
+- **🎬 Видео** — видеоролики
+- **🎵 Аудио** — музыка и записи
+- **📄 Документы** — PDF, Word, Excel и другие
 
 ### 🔄 Логика переходов
 
 Настраивается в свойствах каждого блока:
-- **Кнопки** - пользователь выбирает один из вариантов, и бот переходит на нужное сообщение
-- **Ожидание ввода** - бот ждет ответ от пользователя, затем переходит на следующее сообщение
-- **Автопереход** - переход к следующему блоку автоматически без ожидания
-- **Условные переходы** - "если произошло то-то, то на другое сообщение..." (указывается в свойствах)
+- **Кнопки** — пользователь выбирает вариант, бот переходит на нужное сообщение
+- **Ожидание ввода** — бот ждёт ответ, затем переходит дальше
+- **Автопереход** — переход к следующему блоку автоматически
+- **Условные переходы** — ветвление по значению переменных
+
+> 💡 Список блоков постоянно пополняется. Следите за обновлениями!
 
 </details>
 
@@ -1262,7 +732,7 @@ if __name__ == "__main__":
 <hr style="border: 1px solid rgba(255,255,255,0.3); margin: 15px 0;">
 <div style="text-align: left; font-size: 14px;">
 
-<p><strong>📋 <a href="docs/development/SETUP.md" style="color: #FFE4E1;">Настройка проекта</a></strong><br/>
+<p><strong>📋 <a href="docs/development/INSTALLATION.md" style="color: #FFE4E1;">Настройка проекта</a></strong><br/>
 <small>Пошаговое руководство по установке</small></p>
 
 <p><strong>🔧 <a href="docs/development/TROUBLESHOOTING_RU.md" style="color: #FFE4E1;">Устранение неполадок</a></strong><br/>
@@ -1271,8 +741,11 @@ if __name__ == "__main__":
 <p><strong>🤝 <a href="docs/development/CONTRIBUTING.md" style="color: #FFE4E1;">Для контрибьюторов</a></strong><br/>
 <small>Как участвовать в разработке</small></p>
 
-<p><strong>📄 <a href="docs/development/REQUIREMENTS_SPECIFICATION.md" style="color: #FFE4E1;">Спецификация</a></strong><br/>
-<small>Техническое описание</small></p>
+<p><strong>📄 <a href="docs/JSDOC_STANDARDS.md" style="color: #FFE4E1;">JSDoc стандарты</a></strong><br/>
+<small>Стандарты документации кода</small></p>
+
+<p><strong>🧩 <a href="docs/development/adding-new-trigger.md" style="color: #FFE4E1;">Добавление нового узла</a></strong><br/>
+<small>Инструкция по созданию новой ноды</small></p>
 
 </div>
 </div>
@@ -1283,38 +756,38 @@ if __name__ == "__main__":
 <hr style="border: 1px solid rgba(255,255,255,0.3); margin: 15px 0;">
 <div style="text-align: left; font-size: 14px;">
 
-<p><strong>🚂 <a href="docs/deployment/RAILWAY_DEPLOY.md" style="color: #FFE4E1;">Railway</a></strong><br/>
+<p><strong>🚂 <a href="docs/deployment/RAILWAY_QUICK_DEPLOY.md" style="color: #FFE4E1;">Railway</a></strong><br/>
 <small>Развертывание на Railway (рекомендуется)</small></p>
 
 <p><strong>🐳 Docker</strong><br/>
-<small>Контейнеризация приложения</small></p>
+<small>Контейнеризация приложения (скоро)</small></p>
 
 <p><strong>☁️ VPS</strong><br/>
-<small>Развертывание на собственном сервере</small></p>
+<small>Развертывание на собственном сервере (скоро)</small></p>
 
 <p><strong>⚙️ CI/CD</strong><br/>
-<small>Автоматическое развертывание</small></p>
+<small>Автоматическое развертывание (скоро)</small></p>
 
 </div>
 </div>
 </td>
 <td align="center" width="25%" style="padding: 15px;">
 <div style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); padding: 20px; border-radius: 15px; color: white; min-height: 200px;">
-<h3>📊 Анализ</h3>
+<h3>🧩 Возможности</h3>
 <hr style="border: 1px solid rgba(255,255,255,0.3); margin: 15px 0;">
 <div style="text-align: left; font-size: 14px;">
 
-<p><strong>🏗️ <a href="docs/analysis/PROJECT_STRUCTURE_ANALYSIS.md" style="color: #FFE4E1;">Структура проекта</a></strong><br/>
-<small>Детальный анализ архитектуры</small></p>
+<p><strong>🏗️ <a href="docs/features/NODE_TYPES.md" style="color: #FFE4E1;">Типы узлов</a></strong><br/>
+<small>Полный список доступных блоков</small></p>
 
-<p><strong>🔧 <a href="docs/analysis/INFRASTRUCTURE_ANALYSIS.md" style="color: #FFE4E1;">Инфраструктура</a></strong><br/>
-<small>Технические решения</small></p>
+<p><strong>🔧 <a href="docs/features/POSSIBLE_TRIGGERS_AND_ACTIONS.md" style="color: #FFE4E1;">Триггеры и действия</a></strong><br/>
+<small>Справочник возможностей</small></p>
 
 <p><strong>📈 Производительность</strong><br/>
-<small>Оптимизация и мониторинг</small></p>
+<small>Оптимизация и мониторинг (скоро)</small></p>
 
 <p><strong>🧪 Тестирование</strong><br/>
-<small>Стратегии тестирования</small></p>
+<small>Стратегии тестирования (скоро)</small></p>
 
 </div>
 </div>
@@ -1329,13 +802,13 @@ if __name__ == "__main__":
 <small>Как обновить проект с GitHub</small></p>
 
 <p><strong>🔐 Аутентификация</strong><br/>
-<small>Защита пользовательских данных</small></p>
+<small>Защита пользовательских данных (скоро)</small></p>
 
 <p><strong>🚨 Мониторинг</strong><br/>
-<small>Отслеживание угроз</small></p>
+<small>Отслеживание угроз (скоро)</small></p>
 
 <p><strong>📋 Аудит</strong><br/>
-<small>Проверка безопасности</small></p>
+<small>Проверка безопасности (скоро)</small></p>
 
 </div>
 </div>
@@ -1348,10 +821,10 @@ if __name__ == "__main__":
 <div align="center" style="margin: 30px 0;">
   <h3>📖 Быстрый доступ к документации</h3>
   <div style="margin: 20px 0;">
-    <a href="docs/README.md">
+    <a href="docs/home.md">
       <img src="https://img.shields.io/badge/📚_Полный_индекс-Все_документы-4285f4?style=for-the-badge&logo=gitbook" alt="Full Index"/>
     </a>
-    <a href="docs/development/SETUP.md">
+    <a href="docs/development/INSTALLATION.md">
       <img src="https://img.shields.io/badge/🚀_Быстрый_старт-Установка-ea4335?style=for-the-badge&logo=rocket" alt="Quick Start"/>
     </a>
     <a href="docs/development/TROUBLESHOOTING_RU.md">
@@ -1369,24 +842,28 @@ if __name__ == "__main__":
   ```
   📂 docs/
   ├── 📁 development/              # 🛠️ Документация для разработчиков
-  │   ├── 📄 SETUP.md             # Настройка окружения разработки
+  │   ├── 📄 INSTALLATION.md       # Настройка окружения разработки
   │   ├── 📄 TROUBLESHOOTING_RU.md # Устранение неполадок
   │   ├── 📄 CONTRIBUTING.md       # Руководство для контрибьюторов
-  │   ├── 📄 REQUIREMENTS_SPECIFICATION.md # Техническая спецификация
+  │   ├── 📄 adding-new-trigger.md # Добавление новой ноды
   │   └── 📄 HOW_TO_UPDATE.md     # Как обновить проект
   │
   ├── 📁 deployment/               # 🚀 Руководства по развертыванию
-  │   ├── 📄 RAILWAY_DEPLOY.md    # Развертывание на Railway
-  │   ├── 📄 RAILWAY_CLI_GUIDE.md # Руководство по Railway CLI
-  │   └── 📄 RAILWAY_TROUBLESHOOTING.md # Устранение проблем
+  │   ├── 📄 RAILWAY_QUICK_DEPLOY.md # Быстрый деплой на Railway
+  │   ├── 📄 RAILWAY_TROUBLESHOOTING.md # Устранение проблем
+  │   └── 📄 VERCEL_DEPLOY.md     # Развертывание на Vercel
   │
-  ├── 📁 analysis/                 # 📊 Анализ проекта
-  │   ├── 📄 PROJECT_STRUCTURE_ANALYSIS.md # Анализ структуры
-  │   ├── 📄 PROJECT_STRUCTURE_DIAGRAM.md # Диаграмма структуры
-  │   └── 📄 INFRASTRUCTURE_ANALYSIS.md    # Анализ инфраструктуры
+  ├── 📁 features/                 # 🧩 Описание возможностей
+  │   ├── 📄 NODE_TYPES.md        # Типы узлов
+  │   └── 📄 POSSIBLE_TRIGGERS_AND_ACTIONS.md # Триггеры
   │
-  ├── 📄 COMPONENTS.md            # 🧩 Компоненты проекта
-  └── 📄 README.md                # 📚 Индекс документации
+  ├── 📁 futures/                  # 🔮 Планы развития
+  │
+  ├── 📁 releases/                 # 📝 Release notes
+  │
+  ├── 📄 home.md                   # 📚 Главная страница документации
+  ├── 📄 JSDOC_STANDARDS.md       # 📋 Стандарты JSDoc
+  └── 📄 bot-json-prompt.md       # 🤖 Промт для ИИ
   ```
 
   </div>
@@ -1408,37 +885,36 @@ if __name__ == "__main__":
 <th>💻 Компонент</th>
 <th>⚡ Минимум</th>
 <th>🚀 Рекомендуемо</th>
-<th>🎯 Оптимально</th>
 </tr>
 <tr>
 <td><strong>Node.js</strong></td>
 <td>18.0</td>
-<td>20.0+</td>
 <td>22.0+ LTS</td>
 </tr>
 <tr>
 <td><strong>PostgreSQL</strong></td>
-<td>13</td>
-<td>15+</td>
-<td>16+ Latest</td>
+<td>17</td>
+<td>17.10+</td>
+</tr>
+<tr>
+<td><strong>Redis</strong></td>
+<td>7.0</td>
+<td>7.2+ (Memurai на Windows)</td>
 </tr>
 <tr>
 <td><strong>Python</strong></td>
-<td>3.11</td>
-<td>3.12+</td>
-<td>3.13+ Latest</td>
+<td>3.10</td>
+<td>3.13+</td>
 </tr>
 <tr>
 <td><strong>RAM</strong></td>
 <td>1 GB</td>
 <td>2+ GB</td>
-<td>4+ GB</td>
 </tr>
 <tr>
 <td><strong>Диск</strong></td>
 <td>500 MB</td>
-<td>1+ GB</td>
-<td>2+ GB SSD</td>
+<td>1+ GB SSD</td>
 </tr>
 </table>
 
@@ -1455,20 +931,38 @@ if __name__ == "__main__":
 
 ## 🚀 Развертывание готового бота
 
-После создания бота, приложение генерирует Python файл. Вы можете:
+### ▶️ Запуск из конструктора (основной способ)
 
-1. **Скачать** готовый код
-2. **Запустить локально** на своем компьютере:
-   - На Windows, Mac или Linux
-   - Просто установите Python и запустите файл
-   - Идеально для тестирования перед публикацией
-3. **Развернуть** на хостинге для постоянной работы:
-   - **Railway** - современная платформа для деплоя
-   - **VPS** (DigitalOcean, Linode, AWS) - полный контроль
-   - **Cloud Run** - от Google для больших нагрузок
-4. **Модифицировать** если нужна специальная логика
+Бот запускается **прямо из интерфейса** — нажмите кнопку «Запустить» во вкладке «Бот». Сервер автоматически:
+1. Генерирует Python-код из вашей схемы
+2. Запускает бот как Python-процесс (через Worker Pool)
+3. Показывает логи и статус в реальном времени
 
-Подробные инструкции по деплою на Railway смотрите в файле [docs/deployment/RAILWAY_DEPLOY.md](docs/deployment/RAILWAY_DEPLOY.md).
+> ⚠️ **Важно:** Python-зависимости устанавливаются один раз на сервере командой `pip install -r requirements.txt`. Все боты используют общее окружение.
+
+### 📦 Скачать код и запустить отдельно
+
+Из вкладки «Код бота» можно скачать сгенерированный `.py` файл и запустить независимо от конструктора:
+
+<div align="center">
+  <img src="assets/images/code-tab-preview.png" alt="Вкладка Код проекта" width="800">
+  <p><em>Вкладка «Код проекта» — просмотр, копирование и скачивание сгенерированного Python-кода</em></p>
+</div>
+
+```bash
+pip install -r requirements.txt   # один раз
+python bot.py                     # запуск бота
+```
+
+Код полностью ваш — можно редактировать, дополнять, деплоить куда угодно.
+
+### ☁️ Деплой на хостинг
+
+| Платформа | Подходит для | Документация |
+|-----------|-------------|--------------|
+| **Railway** | Быстрый деплой, автоскейлинг | [RAILWAY_QUICK_DEPLOY.md](docs/deployment/RAILWAY_QUICK_DEPLOY.md) |
+| **VPS** (DigitalOcean, Linode) | Полный контроль | Стандартный запуск Python |
+| **Docker** | Изоляция, воспроизводимость | `docker compose up -d` |
 
 ---
 
@@ -1499,7 +993,7 @@ MIT License - используйте свободно для личных и к�
 </td>
 <td align="center" width="25%">
 <h4>📖 Нужна помощь?</h4>
-<a href="docs/README.md">
+<a href="docs/home.md">
 <img src="https://img.shields.io/badge/Документация-green?style=flat-square&logo=gitbook" alt="Docs"/>
 </a>
 </td>

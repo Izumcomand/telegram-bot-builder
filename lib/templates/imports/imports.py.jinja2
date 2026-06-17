@@ -83,3 +83,13 @@ from aiogram.fsm.state import State, StatesGroup
 
 import re
 from types import SimpleNamespace
+
+{%- if hasUserbotNodes %}
+from telethon import TelegramClient
+from telethon import events
+from telethon.sessions import StringSession
+from telethon.errors import FloodWaitError as TelethonFloodWaitError
+
+# Подавляем verbose-логи Telethon
+logging.getLogger('telethon').setLevel(logging.WARNING)
+{%- endif %}

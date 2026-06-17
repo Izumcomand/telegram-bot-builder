@@ -31,6 +31,19 @@ const NODE_TYPES_WITH_DEDICATED_HANDLERS = new Set<string>([
   'set_variable', // собственный обработчик генерируется шаблоном set-variable.py.jinja2
   'psql_query', // собственный обработчик генерируется шаблоном psql-query.py.jinja2
   'convert_file', // собственный обработчик генерируется шаблоном convert-file.py.jinja2
+  'loop', // собственный обработчик генерируется шаблоном loop.py.jinja2
+  'parallel_split', // собственный обработчик генерируется шаблоном parallel-split.py.jinja2
+  'schedule_trigger', // собственный обработчик генерируется шаблоном schedule-trigger.py.jinja2
+  'answer_callback_query', // собственный обработчик генерируется шаблоном answer-callback-query.py.jinja2
+  'bot_table', // собственный обработчик генерируется шаблоном bot-table.py.jinja2
+  'delay', // собственный обработчик генерируется шаблоном delay.py.jinja2
+  'edit_message', // собственный обработчик генерируется шаблоном edit-message.py.jinja2
+  'delete_message', // собственный обработчик генерируется шаблоном delete-message.py.jinja2
+  'kick_user', // собственный обработчик генерируется шаблоном kick-user.py.jinja2
+  'userbot_message', // собственный обработчик генерируется шаблоном userbot-message.py.jinja2
+  'userbot_click_button', // собственный обработчик генерируется шаблоном userbot-click-button.py.jinja2
+  'userbot_inline_query', // собственный обработчик генерируется шаблоном userbot-inline-query.py.jinja2
+  'userbot_edit_trigger', // собственный обработчик генерируется шаблоном userbot-edit-trigger.py.jinja2
 ]);
 
 /**

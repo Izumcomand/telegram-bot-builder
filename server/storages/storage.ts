@@ -15,11 +15,15 @@ import {
   type GroupMember,
   type MediaFile,
   type TelegramUserDB,
-  type UserBotData,
   type ProjectCollaborator,
   type Broadcast,
   type BroadcastResult,
   type BroadcastFilters,
+  type BotEnvVariable,
+  type BotTable,
+  type BotTableColumn,
+  type BotTableRow,
+  type WorkerProcess,
 } from "@shared/schema";
 import { EnhancedDatabaseStorage } from "../database/EnhancedDatabaseStorage";
 import type {
@@ -43,11 +47,15 @@ import type {
   StorageMediaFileInput,
   StorageMediaFileUpdate,
   StorageTelegramUserInput,
-  StorageUserBotDataInput,
-  StorageUserBotDataUpdate,
   StorageBroadcastInput,
   StorageBroadcastUpdate,
   StorageBroadcastResultInput,
+  StorageBotEnvVariableInput,
+  StorageBotEnvVariableUpdate,
+  StorageBotTableInput,
+  StorageBotTableColumnInput,
+  StorageBotTableRowInput,
+  StorageWorkerProcessInput,
 } from "./storageTypes";
 
 /**
@@ -468,110 +476,6 @@ export interface IStorage {
    */
   searchMediaFiles(projectId: number, query: string): Promise<MediaFile[]>;
 
-  // User bot data
-  /**
-   * Получить данные пользователя бота по ID
-   * @param id - ID данных пользователя
-   * @returns Данные пользователя бота или undefined, если не найдены
-   */
-  getUserBotData(id: number): Promise<UserBotData | undefined>;
-
-  /**
-   * Получить данные пользователя бота по ID проекта и ID пользователя
-   * @param projectId - ID проекта
-   * @param userId - ID пользователя
-   * @returns Данные пользователя бота или undefined, если не найдены
-   */
-  getUserBotDataByProjectAndUser(projectId: number, userId: string, tokenId?: number | null): Promise<UserBotData | undefined>;
-
-  /**
-   * Получить все данные пользователей бота по ID проекта
-   * @param projectId - ID проекта
-   * @returns Массив данных пользователей бота
-   */
-  getUserBotDataByProject(projectId: number, tokenId?: number | null): Promise<UserBotData[]>;
-
-  /**
-   * Получить все данные пользователей ботов
-   * @returns Массив всех данных пользователей ботов
-   */
-  getAllUserBotData(): Promise<UserBotData[]>;
-
-  /**
-   * Создать новые данные пользователя бота
-   * @param userData - Данные для создания
-   * @returns Созданные данные пользователя бота
-   */
-  createUserBotData(userData: StorageUserBotDataInput): Promise<UserBotData>;
-
-  /**
-   * Обновить данные пользователя бота
-   * @param id - ID данных
-   * @param userData - Данные для обновления
-   * @returns Обновленные данные пользователя бота или undefined, если не найдены
-   */
-  updateUserBotData(id: number, userData: StorageUserBotDataUpdate): Promise<UserBotData | undefined>;
-
-  /**
-   * Удалить данные пользователя бота
-   * @param id - ID данных
-   * @returns true, если данные были удалены, иначе false
-   */
-  deleteUserBotData(id: number): Promise<boolean>;
-
-  /**
-   * Удалить все данные пользователей бота по ID проекта
-   * @param projectId - ID проекта
-   * @returns true, если данные были удалены, иначе false
-   */
-  deleteUserBotDataByProject(projectId: number, tokenId?: number | null): Promise<boolean>;
-
-  /**
-   * Увеличить счетчик взаимодействий пользователя
-   * @param id - ID данных пользователя
-   * @returns true, если счетчик был увеличен, иначе false
-   */
-  incrementUserInteraction(id: number): Promise<boolean>;
-
-  /**
-   * Увеличить счетчик взаимодействий пользователя бота (bot_users)
-   * @param userId - ID пользователя в Telegram
-   * @param projectId - ID проекта
-   * @param tokenId - ID токена бота
-   * @returns true, если счетчик был увеличен, иначе false
-   */
-  incrementBotUserInteraction(userId: number, projectId: number, tokenId: number): Promise<boolean>;
-
-  /**
-   * Обновить состояние пользователя
-   * @param id - ID данных пользователя
-   * @param state - Новое состояние
-   * @returns true, если состояние было обновлено, иначе false
-   */
-  updateUserState(id: number, state: string): Promise<boolean>;
-
-  /**
-   * Поиск данных пользователей бота по проекту и запросу
-   * @param projectId - ID проекта
-   * @param query - Поисковый запрос
-   * @returns Массив найденных данных пользователей
-   */
-  searchUserBotData(projectId: number, query: string, tokenId?: number | null): Promise<UserBotData[]>;
-
-  /**
-   * Получить статистику по данным пользователей бота
-   * @param projectId - ID проекта
-   * @returns Объект со статистикой пользователей
-   */
-  getUserBotDataStats(projectId: number, tokenId?: number | null): Promise<{
-    totalUsers: number;
-    activeUsers: number;
-    blockedUsers: number;
-    premiumUsers: number;
-    totalInteractions: number;
-    avgInteractionsPerUser: number;
-  }>;
-
   // Bot groups
   /**
    * Получить группу бота по ID
@@ -676,6 +580,21 @@ export interface IStorage {
   getBotMessagesWithMedia(projectId: number, userId: string, limit?: number, order?: 'asc' | 'desc', messageType?: 'user' | 'bot', tokenId?: number | null): Promise<(BotMessage & { media?: Array<MediaFile & { mediaKind: string; orderIndex: number }> })[]>;
 
   /**
+   * Получить сообщения группового чата по project_id и chat_id
+   * @param projectId - ID проекта
+   * @param chatId - Telegram chat_id группы
+   * @param limit - Ограничение количества сообщений (по умолчанию 100)
+   * @param tokenId - Опциональный ID токена для фильтрации
+   * @returns Массив сообщений с медиа, отсортированных по убыванию даты
+   */
+  getGroupChatMessages(
+    projectId: number,
+    chatId: string,
+    limit?: number,
+    tokenId?: number | null
+  ): Promise<(BotMessage & { media?: Array<MediaFile & { mediaKind: string; orderIndex: number }> })[]>;
+
+  /**
    * Удалить сообщения бота по проекту и пользователю
    * @param projectId - ID проекта
    * @param userId - ID пользователя
@@ -726,6 +645,15 @@ export interface IStorage {
    * @returns Массив записей логов
    */
   getBotLogs(projectId: number, tokenId: number, limit?: number): Promise<BotLog[]>;
+
+  /**
+   * Получить логи только последнего запуска бота
+   * @param projectId - Идентификатор проекта
+   * @param tokenId - Идентификатор токена
+   * @param limit - Максимальное количество строк
+   * @returns Массив записей логов последнего запуска
+   */
+  getLatestLaunchLogs(projectId: number, tokenId: number, limit?: number): Promise<BotLog[]>;
 
   /**
    * Создать запись о запуске бота
@@ -869,7 +797,169 @@ export interface IStorage {
    * @param filters - Фильтры аудитории
    * @returns Массив пользователей
    */
-  getUsersForBroadcast(projectId: number, tokenId: number, filters: BroadcastFilters): Promise<UserBotData[]>;
+  getUsersForBroadcast(projectId: number, tokenId: number, filters: BroadcastFilters): Promise<any[]>;
+
+  // Переменные окружения бота
+
+  /**
+   * Получить все переменные окружения для токена
+   * @param tokenId - ID токена
+   * @returns Массив переменных окружения
+   */
+  getEnvVariables(tokenId: number): Promise<BotEnvVariable[]>;
+
+  /**
+   * Получить переменную окружения по ID
+   * @param id - ID переменной
+   * @returns Переменная окружения или undefined
+   */
+  getEnvVariable(id: number): Promise<BotEnvVariable | undefined>;
+
+  /**
+   * Создать новую переменную окружения
+   * @param data - Данные для создания
+   * @returns Созданная переменная
+   */
+  createEnvVariable(data: StorageBotEnvVariableInput): Promise<BotEnvVariable>;
+
+  /**
+   * Обновить переменную окружения
+   * @param id - ID переменной
+   * @param data - Данные для обновления
+   * @returns Обновлённая переменная или undefined
+   */
+  updateEnvVariable(id: number, data: StorageBotEnvVariableUpdate): Promise<BotEnvVariable | undefined>;
+
+  /**
+   * Удалить переменную окружения
+   * @param id - ID переменной
+   * @returns true, если переменная была удалена
+   */
+  deleteEnvVariable(id: number): Promise<boolean>;
+
+  /**
+   * Удалить все переменные окружения токена
+   * @param tokenId - ID токена
+   * @returns true, если переменные были удалены
+   */
+  deleteEnvVariablesByToken(tokenId: number): Promise<boolean>;
+
+  // Пользовательские таблицы проекта (Bot Tables)
+
+  /**
+   * Получить все таблицы проекта
+   * @param projectId - ID проекта
+   * @returns Массив таблиц
+   */
+  getBotTables(projectId: number): Promise<BotTable[]>;
+
+  /**
+   * Создать новую таблицу проекта
+   * @param input - Данные для создания
+   * @returns Созданная таблица
+   */
+  createBotTable(input: StorageBotTableInput): Promise<BotTable>;
+
+  /**
+   * Удалить таблицу проекта
+   * @param id - ID таблицы
+   * @returns true, если таблица была удалена
+   */
+  deleteBotTable(id: number): Promise<boolean>;
+
+  /**
+   * Переименовать таблицу проекта
+   * @param id - ID таблицы
+   * @param name - Новое название
+   * @returns Обновлённая таблица или undefined
+   */
+  renameBotTable(id: number, name: string): Promise<BotTable | undefined>;
+
+  /**
+   * Получить колонки таблицы
+   * @param tableId - ID таблицы
+   * @returns Массив колонок
+   */
+  getBotTableColumns(tableId: number): Promise<BotTableColumn[]>;
+
+  /**
+   * Создать колонку таблицы
+   * @param input - Данные для создания
+   * @returns Созданная колонка
+   */
+  createBotTableColumn(input: StorageBotTableColumnInput): Promise<BotTableColumn>;
+
+  /**
+   * Удалить колонку таблицы
+   * @param id - ID колонки
+   * @returns true, если колонка была удалена
+   */
+  deleteBotTableColumn(id: number): Promise<boolean>;
+
+  /**
+   * Переименовать колонку таблицы
+   * @param id - ID колонки
+   * @param name - Новое название
+   * @returns Обновлённая колонка или undefined
+   */
+  renameBotTableColumn(id: number, name: string): Promise<BotTableColumn | undefined>;
+
+  /**
+   * Получить строки таблицы
+   * @param tableId - ID таблицы
+   * @returns Массив строк
+   */
+  getBotTableRows(tableId: number): Promise<BotTableRow[]>;
+
+  /**
+   * Создать строки таблицы (батч)
+   * @param inputs - Массив данных для создания
+   * @returns Массив созданных строк
+   */
+  createBotTableRows(inputs: StorageBotTableRowInput[]): Promise<BotTableRow[]>;
+
+  /**
+   * Обновить данные строки таблицы
+   * @param id - ID строки
+   * @param data - Новые данные строки
+   * @returns Обновлённая строка или undefined
+   */
+  updateBotTableRow(id: number, data: Record<string, string>): Promise<BotTableRow | undefined>;
+
+  /**
+   * Удалить строку таблицы
+   * @param id - ID строки
+   * @returns true, если строка была удалена
+   */
+  deleteBotTableRow(id: number): Promise<boolean>;
+
+  /**
+   * Переиндексировать строки таблицы (row_index = 0, 1, 2, ...)
+   * @param tableId - ID таблицы
+   */
+  reindexBotTableRows(tableId: number): Promise<void>;
+
+  // Worker Processes (мониторинг воркеров)
+
+  /**
+   * Создать запись о процессе воркера
+   * @param data - Данные для создания записи
+   * @returns Созданная запись процесса воркера
+   */
+  createWorkerProcess(data: StorageWorkerProcessInput): Promise<WorkerProcess>;
+
+  /**
+   * Остановить воркер проекта — установить status = 'stopped', stopped_at = NOW()
+   * @param projectId - ID проекта
+   * @returns true, если запись была обновлена
+   */
+  stopWorkerProcess(projectId: number): Promise<boolean>;
+
+  /**
+   * Получить все активные воркеры (status = 'running')
+   * @returns Массив активных записей воркеров
+   */
+  getActiveWorkers(): Promise<WorkerProcess[]>;
 }
 
 // Используем EnhancedDatabaseStorage для продвинутого управления базой данных

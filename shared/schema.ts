@@ -22,9 +22,6 @@ export type { BotTemplate, InsertBotTemplate } from "./schema/tables/bot-templat
 export { mediaFiles, insertMediaFileSchema } from "./schema/tables/media-files";
 export type { MediaFile, InsertMediaFile } from "./schema/tables/media-files";
 
-export { userBotData, insertUserBotDataSchema } from "./schema/tables/user-bot-data";
-export type { UserBotData, InsertUserBotData } from "./schema/tables/user-bot-data";
-
 export { botUsers, insertBotUserSchema } from "./schema/tables/bot-users";
 export type { BotUser, InsertBotUser } from "./schema/tables/bot-users";
 
@@ -69,6 +66,15 @@ export type { AppSetting, InsertAppSetting } from "./schema/tables/app-settings"
 
 export { broadcasts, broadcastResults, insertBroadcastSchema, insertBroadcastResultSchema, broadcastFiltersSchema } from "./schema/tables/broadcasts";
 export type { Broadcast, InsertBroadcast, BroadcastResult, InsertBroadcastResult, BroadcastFilters } from "./schema/tables/broadcasts";
+
+export { botEnvVariables, insertBotEnvVariableSchema } from "./schema/tables/bot-env-variables";
+export type { BotEnvVariable, InsertBotEnvVariable } from "./schema/tables/bot-env-variables";
+
+export { botTables, botTableColumns, botTableRows, insertBotTableSchema, insertBotTableColumnSchema, insertBotTableRowSchema } from "./schema/tables/bot-tables";
+export type { BotTable, InsertBotTable, BotTableColumn, InsertBotTableColumn, BotTableRow, InsertBotTableRow } from "./schema/tables/bot-tables";
+
+export { workerProcesses, insertWorkerProcessSchema } from "./schema/tables/worker-processes";
+export type { WorkerProcess, InsertWorkerProcess } from "./schema/tables/worker-processes";
 
 export type TelegramUserDB = typeof telegramUsersTable.$inferSelect;
 

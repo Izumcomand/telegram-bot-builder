@@ -12,6 +12,7 @@
  * Блок I: Краевые случаи и синтаксис
  * Блок J: customCallbackData — кастомные callback_data для кнопок и обработчиков
  * Блок O: Переменные в customCallbackData — подстановка {var} в callback_data
+ * Блок P: shuffleButtons — перемешивание кнопок
  */
 
 import fs from 'fs';
@@ -395,9 +396,8 @@ test('B01', 'message -> keyboard прикрепляет отдельную keybo
     'reply_markup=keyboard',
   ], 'B01 message');
   assertIncludesAll(kbd, [
-    'без самостоятельной отправки сообщения',
-    'Keyboard node kbd_1 вызвана',
-    'return',
+    'edit_reply_markup',
+    'reply_markup=None',
   ], 'B01 keyboard');
   syntax(code, 'b01');
 });
@@ -444,26 +444,56 @@ test('B03', 'одна keyboard-нода может использоваться 
   const kbd = block(code, 'kbd_1');
   assertIncludesAll(msg1, ['callback_data="msg_3"', 'InlineKeyboardBuilder()'], 'B03 msg1');
   assertIncludesAll(msg2, ['callback_data="msg_3"', 'InlineKeyboardBuilder()'], 'B03 msg2');
-  assertIncludesAll(kbd, ['без самостоятельной отправки сообщения'], 'B03 keyboard');
+  assertIncludesAll(kbd, ['edit_reply_markup', 'reply_markup=None'], 'B03 keyboard');
   syntax(code, 'b03');
 });
 
-test('B04', 'keyboard-нода без host message безопасно остаётся no-op', () => {
+test('B04', 'keyboard-нода с кнопками генерирует edit_reply_markup', () => {
   const project = makeProject([
     makeKeyboardNode('kbd_orphan', 'inline', [makeButton('Сирота', 'goto', 'msg_1')]),
-    makeMessageNode('msg_1', 'Ответ'),
+    makeMessageNode('msg_1', 'Цель'),
   ]);
 
   const code = gen(project, 'b04');
   const kbd = block(code, 'kbd_orphan');
   assertIncludesAll(kbd, [
-    'без самостоятельной отправки сообщения',
-    'return',
+    'edit_reply_markup',
+    'InlineKeyboardBuilder',
   ], 'B04');
   syntax(code, 'b04');
 });
 
-test('B05', 'keyboard-нода с соединением через condition не ломает генерацию', () => {
+test('B05', 'keyboard-нода с несколькими кнопками генерирует builder.adjust', () => {
+  const project = makeProject([
+    makeKeyboardNode('kbd_multi', 'inline', [
+      makeButton('Кнопка 1', 'goto', 'msg_1'),
+      makeButton('Кнопка 2', 'goto', 'msg_1'),
+      makeButton('Кнопка 3', 'goto', 'msg_1'),
+    ]),
+    makeMessageNode('msg_1', 'Цель'),
+  ]);
+
+  const code = gen(project, 'b05');
+  const kbd = block(code, 'kbd_multi');
+  assertIncludesAll(kbd, ['edit_reply_markup', 'builder.adjust'], 'B05');
+  syntax(code, 'b05');
+});
+
+test('B06', 'keyboard-нода с url-кнопкой генерирует url параметр', () => {
+  const project = makeProject([
+    makeKeyboardNode('kbd_url', 'inline', [
+      { id: 'btn_url', text: 'Сайт', action: 'url', url: 'https://example.com' },
+    ]),
+    makeMessageNode('msg_1', 'Цель'),
+  ]);
+
+  const code = gen(project, 'b06');
+  const kbd = block(code, 'kbd_url');
+  assertIncludesAll(kbd, ['edit_reply_markup', 'url=', 'https://example.com'], 'B06');
+  syntax(code, 'b06');
+});
+
+test('B07', 'keyboard-нода с соединением через condition не ломает генерацию', () => {
   const project = makeProject([
     makeMessageNode('msg_1', 'Старт', { keyboardNodeId: 'kbd_1' }),
     makeConditionNode('cond_1', 'flag', [makeBranch('filled', 'kbd_1'), makeBranch('else', 'msg_2')]),
@@ -473,21 +503,21 @@ test('B05', 'keyboard-нода с соединением через condition н
   ]);
 
   const code = gen(project, 'b05');
-  assertIncludesAll(code, ['async def handle_callback_cond_1', 'await handle_callback_kbd_1(callback_query)'], 'B05');
-  syntax(code, 'b05');
+  assertIncludesAll(code, ['async def handle_callback_cond_1', 'await handle_callback_kbd_1(callback_query)'], 'B07');
+  syntax(code, 'b07');
 });
 
-test('B06', 'отдельная keyboard-нода компилируется вместе с проектом', () => {
+test('B08', 'отдельная keyboard-нода компилируется вместе с проектом', () => {
   const project = makeProject([
     makeMessageNode('msg_1', 'Привет', { keyboardNodeId: 'kbd_1' }),
     makeKeyboardNode('kbd_1', 'reply', [makeButton('Да', 'goto', 'msg_2')]),
     makeMessageNode('msg_2', 'Ок'),
   ]);
 
-  syntax(gen(project, 'b06'), 'b06');
+  syntax(gen(project, 'b08'), 'b08');
 });
 
-test('B07', 'keyboard-нода сохраняет ручные ряды после __dynamic__ и без пустого adjust', () => {
+test('B09', 'keyboard-нода сохраняет ручные ряды после __dynamic__ и без пустого adjust', () => {
   const project = makeProject([
     makeMessageNode('msg_b07', 'Проект', { keyboardNodeId: 'kbd_b07' }),
     makeKeyboardNode('kbd_b07', 'inline', [
@@ -522,7 +552,7 @@ test('B07', 'keyboard-нода сохраняет ручные ряды посл
     makeMessageNode('msg_back', 'Назад'),
   ]);
 
-  const code = gen(project, 'b07');
+  const code = gen(project, 'b09');
   const msg = block(code, 'msg_b07');
   assertIncludesAll(msg, [
     'callback_data="msg_add"',
@@ -530,9 +560,9 @@ test('B07', 'keyboard-нода сохраняет ручные ряды посл
     'callback_data="msg_delete"',
     'callback_data="msg_back"',
     'builder.row(',
-  ], 'B07');
-  assertExcludes(msg, ['builder.adjust()'], 'B07: не должен генерировать пустой builder.adjust()');
-  syntax(code, 'b07');
+  ], 'B09');
+  assertExcludes(msg, ['builder.adjust()'], 'B09: не должен генерировать пустой builder.adjust()');
+  syntax(code, 'b09');
 });
 
 console.log('══ Блок C: Inline и reply-клавиатуры ═════════════════════════════════');
@@ -1253,21 +1283,20 @@ test('H03', 'keyboard-нода не мешает legacy start/command обраб
   syntax(gen(project, 'h03'), 'h03');
 });
 
-test('H04', 'orphan keyboard остаётся безопасным no-op даже в большом проекте', () => {
+test('H04', 'orphan keyboard с кнопками генерирует edit_reply_markup', () => {
   const project = makeProject([
     makeStartNode('start_1', {
+      messageText: 'Привет',
+      buttons: [makeButton('Меню', 'goto', 'msg_menu')],
       keyboardType: 'inline',
-      buttons: [makeButton('Меню', 'goto', 'msg_1')],
     }),
-    makeMessageNode('msg_1', 'A', { keyboardNodeId: 'kbd_1' }),
-    makeKeyboardNode('kbd_1', 'inline', [makeButton('Общая', 'goto', 'msg_2')]),
-    makeKeyboardNode('kbd_orphan', 'inline', [makeButton('Сирота', 'goto', 'msg_2')]),
-    makeMessageNode('msg_2', 'B'),
+    makeMessageNode('msg_menu', 'Меню'),
+    makeKeyboardNode('kbd_orphan', 'inline', [makeButton('Кнопка', 'goto', 'msg_menu')]),
   ]);
 
   const code = gen(project, 'h04');
   const orphan = block(code, 'kbd_orphan');
-  assertIncludesAll(orphan, ['без самостоятельной отправки сообщения', 'return'], 'H04');
+  assertIncludesAll(orphan, ['edit_reply_markup', 'InlineKeyboardBuilder'], 'H04');
   syntax(code, 'h04');
 });
 
@@ -1284,7 +1313,7 @@ test('H05', 'повторное использование keyboard-ноды к�
 
 console.log('══ Блок I: Краевые случаи и синтаксис ═══════════════════════════════');
 
-test('I01', 'пустая keyboard-нода не ломает генерацию', () => {
+test('I01', 'пустая keyboard-нода убирает кнопки через edit_reply_markup(None)', () => {
   const project = makeProject([
     makeMessageNode('msg_1', 'Пустая', { keyboardNodeId: 'kbd_1' }),
     makeKeyboardNode('kbd_1', 'inline', []),
@@ -1292,7 +1321,7 @@ test('I01', 'пустая keyboard-нода не ломает генерацию
 
   const code = gen(project, 'i01');
   const kbd = block(code, 'kbd_1');
-  assertIncludesAll(kbd, ['без самостоятельной отправки сообщения'], 'I01');
+  assertIncludesAll(kbd, ['edit_reply_markup', 'reply_markup=None'], 'I01');
   syntax(code, 'i01');
 });
 
@@ -2047,6 +2076,108 @@ test('O05', 'Синтаксис Python OK для кнопок с перемен�
   ]);
 
   syntax(gen(project, 'o05'), 'o05');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Блок P: shuffleButtons — перемешивание кнопок
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('══ Блок P: shuffleButtons ═══════════════════════════════════════════');
+
+test('P01', 'shuffleButtons=true → random.shuffle в коде', () => {
+  const project = makeProject([
+    makeMessageNode('msg_1', 'Выберите:', {
+      keyboardNodeId: 'kbd_1',
+    }),
+    makeKeyboardNode('kbd_1', 'inline', [
+      makeButton('Кнопка 1', 'goto', 'msg_2'),
+      makeButton('Кнопка 2', 'goto', 'msg_2'),
+      makeButton('Кнопка 3', 'goto', 'msg_2'),
+      makeButton('Кнопка 4', 'goto', 'msg_2'),
+    ], { shuffleButtons: true }),
+    makeMessageNode('msg_2', 'Готово'),
+  ]);
+  const code = gen(project, 'p01');
+  ok(code.includes('random') || code.includes('shuffle'), 'shuffle должен быть в коде');
+  syntax(code, 'p01');
+});
+
+test('P02', 'shuffleButtons=false → нет shuffle в коде', () => {
+  const project = makeProject([
+    makeMessageNode('msg_1', 'Выберите:', {
+      keyboardNodeId: 'kbd_1',
+    }),
+    makeKeyboardNode('kbd_1', 'inline', [
+      makeButton('Кнопка 1', 'goto', 'msg_2'),
+      makeButton('Кнопка 2', 'goto', 'msg_2'),
+    ], { shuffleButtons: false }),
+    makeMessageNode('msg_2', 'Готово'),
+  ]);
+  const code = gen(project, 'p02');
+  const kbdBlock = block(code, 'kbd_1');
+  ok(!kbdBlock.includes('shuffle'), 'shuffle НЕ должен быть в keyboard-ноде при shuffleButtons=false');
+  syntax(code, 'p02');
+});
+
+test('P03', 'shuffleButtons=true + keyboard-нода → edit_reply_markup с shuffle', () => {
+  const project = makeProject([
+    makeKeyboardNode('kbd_shuffle', 'inline', [
+      makeButton('A', 'goto', 'msg_1'),
+      makeButton('B', 'goto', 'msg_1'),
+      makeButton('C', 'goto', 'msg_1'),
+    ], { shuffleButtons: true }),
+    makeMessageNode('msg_1', 'Готово'),
+  ]);
+  const code = gen(project, 'p03');
+  const kbd = block(code, 'kbd_shuffle');
+  ok(kbd.includes('shuffle'), 'shuffle должен быть в keyboard-ноде');
+  ok(kbd.includes('edit_reply_markup'), 'edit_reply_markup должен быть');
+  syntax(code, 'p03');
+});
+
+test('P04', 'shuffleButtons=true → синтаксис Python OK (полный сценарий)', () => {
+  const project = makeProject([
+    { id: 'cmd_1', type: 'command_trigger', position: { x: 0, y: 0 }, data: { command: '/game', autoTransitionTo: 'msg_game', enableAutoTransition: true, description: '', showInMenu: true, adminOnly: false, requiresAuth: false, buttons: [], keyboardType: 'none' } },
+    makeMessageNode('msg_game', 'Найди правильную кнопку:', {
+      keyboardNodeId: 'kbd_game',
+    }),
+    makeKeyboardNode('kbd_game', 'inline', [
+      makeButton('🔧', 'goto', 'msg_win'),
+      makeButton('🔨', 'goto', 'msg_lose'),
+      makeButton('⚡', 'goto', 'msg_lose'),
+      makeButton('🔥', 'goto', 'msg_lose'),
+      makeButton('💎', 'goto', 'msg_lose'),
+      makeButton('🌟', 'goto', 'msg_lose'),
+    ], { shuffleButtons: true }),
+    makeMessageNode('msg_win', 'Верно!'),
+    makeMessageNode('msg_lose', 'Неверно!'),
+  ]);
+  syntax(gen(project, 'p04'), 'p04');
+});
+
+test('P05', 'shuffleButtons=true + динамические кнопки со статическими → shuffle в коде', () => {
+  const project = makeProject([
+    makeMessageNode('msg_1', 'Динамические:', {
+      keyboardNodeId: 'kbd_dyn',
+    }),
+    makeKeyboardNode('kbd_dyn', 'inline', [
+      makeButton('Статическая', 'goto', 'msg_2'),
+    ], {
+      shuffleButtons: true,
+      enableDynamicButtons: true,
+      dynamicButtons: {
+        sourceVariable: 'items',
+        arrayPath: '',
+        textTemplate: '{name}',
+        callbackTemplate: 'item_{id}',
+        columns: 2,
+      },
+    }),
+    makeMessageNode('msg_2', 'Готово'),
+  ]);
+  const code = gen(project, 'p05');
+  ok(code.includes('shuffle'), 'shuffle должен быть для динамических кнопок со статическими');
+  syntax(code, 'p05');
 });
 
 const passed = results.filter(r => r.passed).length;

@@ -223,12 +223,40 @@ export function HttpRequestConfiguration({ selectedNode, onNodeUpdate }: HttpReq
               <SelectContent>
                 <SelectItem value="autodetect" className="text-xs">Автоопределение</SelectItem>
                 <SelectItem value="json" className="text-xs">JSON</SelectItem>
+                <SelectItem value="xml" className="text-xs">XML</SelectItem>
                 <SelectItem value="text" className="text-xs">Текст</SelectItem>
                 {/* Формат file: ответ сохраняется как base64-строка для медиа-ноды */}
                 <SelectItem value="file" className="text-xs">Файл (base64)</SelectItem>
               </SelectContent>
             </Select>
           </div>
+        </div>
+      </Section>
+
+      <Section>
+        <SectionLabel>Извлечение по пути (опционально)</SectionLabel>
+        <div className="space-y-2">
+          <div className="flex gap-2 items-center">
+            <Label className="text-xs text-muted-foreground w-24 shrink-0">JSON путь</Label>
+            <Input
+              placeholder="exchange.{from_id}.to.{to_id}.xr"
+              value={(data.httpRequestResponseJsonPath as string) || ''}
+              onChange={(e) => upd({ httpRequestResponseJsonPath: e.target.value })}
+              className="h-7 font-mono text-xs flex-1"
+            />
+          </div>
+          <div className="flex gap-2 items-center">
+            <Label className="text-xs text-muted-foreground w-24 shrink-0">Сохранить в</Label>
+            <Input
+              placeholder="extracted_value"
+              value={(data.httpRequestResponseExtractTo as string) || ''}
+              onChange={(e) => upd({ httpRequestResponseExtractTo: e.target.value })}
+              className="h-7 font-mono text-xs flex-1"
+            />
+          </div>
+          <p className="text-[10px] text-muted-foreground">
+            Извлекает значение из JSON-ответа по указанному пути. Поддерживает {'{переменные}'}.
+          </p>
         </div>
       </Section>
 
@@ -276,6 +304,97 @@ export function HttpRequestConfiguration({ selectedNode, onNodeUpdate }: HttpReq
             onCheckedChange={(v) => upd({ httpRequestFollowRedirects: v })}
           />
         </div>
+      </Section>
+
+      <Section>
+        <SectionLabel>Пакетный режим (Batch)</SectionLabel>
+        <CheckOption
+          id="enableBatch"
+          label="Параллельные запросы по массиву"
+          checked={!!(data.httpRequestBatchEnabled)}
+          onCheckedChange={(v) => upd({ httpRequestBatchEnabled: v })}
+        />
+
+        {data.httpRequestBatchEnabled && (
+          <div className="mt-3 space-y-2">
+            <div className="flex gap-2 items-center">
+              <Label className="text-xs text-muted-foreground w-24 shrink-0">Источник</Label>
+              <Input
+                placeholder="table.exchangers"
+                value={(data.httpRequestBatchSource as string) || ''}
+                onChange={(e) => upd({ httpRequestBatchSource: e.target.value })}
+                className="h-7 font-mono text-xs flex-1"
+              />
+            </div>
+            <div className="flex gap-2 items-center">
+              <Label className="text-xs text-muted-foreground w-24 shrink-0">Элемент</Label>
+              <Input
+                placeholder="item"
+                value={(data.httpRequestBatchItemVar as string) || 'item'}
+                onChange={(e) => upd({ httpRequestBatchItemVar: e.target.value })}
+                className="h-7 font-mono text-xs flex-1"
+              />
+            </div>
+            <div className="flex gap-2 items-center">
+              <Label className="text-xs text-muted-foreground w-24 shrink-0">Результат</Label>
+              <Input
+                placeholder="results"
+                value={(data.httpRequestBatchResultVariable as string) || ''}
+                onChange={(e) => upd({ httpRequestBatchResultVariable: e.target.value })}
+                className="h-7 font-mono text-xs flex-1"
+              />
+            </div>
+
+            {/* Поля результата */}
+            <div className="mt-3">
+              <Label className="text-xs font-medium mb-1.5 block">Поля результата</Label>
+              {((data.httpRequestBatchResultFields as any[]) || []).map((field: any, idx: number) => (
+                <div key={idx} className="flex gap-1 items-center mb-1">
+                  <Input
+                    placeholder="key"
+                    value={field.key || ''}
+                    onChange={(e) => {
+                      const fields = [...((data.httpRequestBatchResultFields as any[]) || [])];
+                      fields[idx] = { ...fields[idx], key: e.target.value };
+                      upd({ httpRequestBatchResultFields: fields } as any);
+                    }}
+                    className="h-6 font-mono text-xs w-20"
+                  />
+                  <span className="text-xs text-muted-foreground">=</span>
+                  <Input
+                    placeholder="{item.field} или __extracted__"
+                    value={field.value || ''}
+                    onChange={(e) => {
+                      const fields = [...((data.httpRequestBatchResultFields as any[]) || [])];
+                      fields[idx] = { ...fields[idx], value: e.target.value };
+                      upd({ httpRequestBatchResultFields: fields } as any);
+                    }}
+                    className="h-6 font-mono text-xs flex-1"
+                  />
+                  <button
+                    onClick={() => {
+                      const fields = [...((data.httpRequestBatchResultFields as any[]) || [])];
+                      fields.splice(idx, 1);
+                      upd({ httpRequestBatchResultFields: fields } as any);
+                    }}
+                    className="text-xs text-red-400 hover:text-red-600 px-1"
+                  >×</button>
+                </div>
+              ))}
+              <button
+                onClick={() => {
+                  const fields = [...((data.httpRequestBatchResultFields as any[]) || []), { key: '', value: '' }];
+                  upd({ httpRequestBatchResultFields: fields } as any);
+                }}
+                className="text-xs text-blue-500 hover:text-blue-700 mt-1"
+              >+ Добавить поле</button>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground mt-2">
+              Для каждого элемента массива выполняется запрос параллельно. URL и JSON-путь поддерживают {'{item.field}'}. Значение <code className="bg-muted px-1 rounded">__extracted__</code> — результат извлечения по JSON Path.
+            </p>
+          </div>
+        )}
       </Section>
 
       <Section>

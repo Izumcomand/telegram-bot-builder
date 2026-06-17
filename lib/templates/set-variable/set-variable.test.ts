@@ -154,3 +154,155 @@ describe('Производительность', () => {
     expect(Date.now() - start).toBeLessThan(100);
   });
 });
+
+// ─── Режим random ────────────────────────────────────────────────────────────
+
+describe('Режим random', () => {
+  it('содержит random.randint при mode: random', () => {
+    const nodes = [
+      { id: 'sv_rand', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'salary', value: '500', maxValue: '900', mode: 'random' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('randint');
+  });
+
+  it('содержит import random', () => {
+    const nodes = [
+      { id: 'sv_rand2', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'exp_gain', value: '8', maxValue: '16', mode: 'random' }],
+        autoTransitionTo: 'msg_1',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('import random');
+  });
+
+  it('содержит logging.info с random', () => {
+    const nodes = [
+      { id: 'sv_rand3', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'reward', value: '100', maxValue: '500', mode: 'random' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('random');
+    expect(r).toContain('logging.info');
+  });
+});
+
+// ─── Режим timestamp ─────────────────────────────────────────────────────────
+
+describe('Режим timestamp', () => {
+  it('содержит time.time() при mode: timestamp', () => {
+    const nodes = [
+      { id: 'sv_ts', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'cooldown_until', value: '90', mode: 'timestamp' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('time()');
+  });
+
+  it('содержит import time', () => {
+    const nodes = [
+      { id: 'sv_ts2', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'expires_at', value: '3600', mode: 'timestamp' }],
+        autoTransitionTo: 'msg_1',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('import time');
+  });
+
+  it('offset=0 генерирует текущий timestamp', () => {
+    const nodes = [
+      { id: 'sv_ts3', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'now_ts', value: '0', mode: 'timestamp' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('timestamp');
+    expect(r).toContain('logging.info');
+  });
+});
+
+// ─── Режим random_item ───────────────────────────────────────────────────────
+
+describe('Режим random_item', () => {
+  it('содержит random.choice при mode: random_item', () => {
+    const nodes = [
+      { id: 'sv_ri', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'emoji', value: '🔧,💥,💡,⚡', mode: 'random_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('choice');
+  });
+
+  it('содержит split(",") для разделения элементов', () => {
+    const nodes = [
+      { id: 'sv_ri2', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'greeting', value: 'Привет,Здравствуйте,Хай', mode: 'random_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('split');
+  });
+
+  it('содержит logging.info с random_item', () => {
+    const nodes = [
+      { id: 'sv_ri3', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'item', value: 'a,b,c', mode: 'random_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('random_item');
+    expect(r).toContain('logging.info');
+  });
+});
+
+// ─── Режим array_item ────────────────────────────────────────────────────────
+
+describe('Режим array_item', () => {
+  it('содержит json.loads для парсинга массива', () => {
+    const nodes = [
+      { id: 'sv_ai', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'item', value: '{items}', maxValue: '0', mode: 'array_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('json');
+  });
+
+  it('поддерживает dot-notation в индексе', () => {
+    const nodes = [
+      { id: 'sv_ai2', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'name', value: '{response}', maxValue: 'data.user.name', mode: 'array_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('split');
+    expect(r).toContain('array_item');
+  });
+
+  it('содержит logging.info', () => {
+    const nodes = [
+      { id: 'sv_ai3', type: 'set_variable', data: {
+        assignments: [{ id: 'a1', variable: 'val', value: '{arr}', maxValue: '1', mode: 'array_item' }],
+        autoTransitionTo: '',
+      }, position: { x: 0, y: 0 } } as any,
+    ];
+    const r = generateSetVariableHandlers(nodes);
+    expect(r).toContain('logging.info');
+  });
+});

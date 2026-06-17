@@ -18,6 +18,8 @@ import { getBotTokenStatusHandler } from './botManagement/handlers/getBotTokenSt
 import { getBotTokenPhotoHandler } from './botManagement/handlers/getBotTokenPhotoHandler';
 import { handleGetLaunchHistory } from './botManagement/handlers/botLaunchHistoryHandler';
 import { handleGetLaunchLogs } from './botManagement/handlers/botLaunchLogsHandler';
+import { handleWorkerStats } from './botManagement/handlers/workerStatsHandler';
+import { handleClearLogs } from './botManagement/handlers/clearLogsHandler';
 
 /**
  * Настраивает маршруты управления ботами
@@ -27,6 +29,7 @@ import { handleGetLaunchLogs } from './botManagement/handlers/botLaunchLogsHandl
  * @returns {void}
  */
 export function setupBotManagementRoutes(app: Express): void {
+    app.get("/api/workers/stats", handleWorkerStats);
     app.get("/api/tokens/:tokenId/bot-status", handleBotStatusByToken);
     app.get("/api/bot/tokens/:tokenId/status", getBotTokenStatusHandler);
     app.get("/api/bot/tokens/:tokenId/photo", getBotTokenPhotoHandler);
@@ -36,4 +39,5 @@ export function setupBotManagementRoutes(app: Express): void {
     app.post("/api/projects/:id/bot/stop", requireProjectAccess, handleBotStop);
     app.post("/api/projects/:id/bot/restart", requireProjectAccess, handleBotRestart);
     app.post("/api/projects/:id/bot/restart-all", requireProjectAccess, handleBotRestartAll);
+    app.delete("/api/projects/:projectId/tokens/:tokenId/logs", requireProjectAccess, handleClearLogs);
 }

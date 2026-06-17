@@ -56,6 +56,21 @@ export { generateForwardMessage, generateForwardMessageFromNode, nodeToForwardMe
 /** Типы шаблона пересылки сообщений */
 export type { ForwardMessageTemplateParams, ForwardMessageTargetRecipient, ForwardMessageSourceMode, ForwardMessageTargetMode } from './templates/forward-message';
 
+/** Экспорт шаблона удаления сообщений */
+export { generateDeleteMessage, generateDeleteMessageHandlers, collectDeleteMessageEntries } from './templates/delete-message';
+/** Типы шаблона удаления сообщений */
+export type { DeleteMessageTemplateParams, DeleteMessageEntry, DeleteMessageIdSource, DeleteMessageChatIdSource } from './templates/delete-message';
+
+/** Экспорт шаблона исключения пользователя */
+export { generateKickUser, generateKickUserHandlers, collectKickUserEntries } from './templates/kick-user';
+/** Типы шаблона исключения пользователя */
+export type { KickUserTemplateParams, KickUserEntry, KickUserIdSource, KickUserChatIdSource } from './templates/kick-user';
+
+/** Экспорт шаблона параллельного запуска веток */
+export { generateParallelSplit, generateParallelSplitHandlers, collectParallelSplitEntries } from './templates/parallel-split';
+/** Типы шаблона параллельного запуска веток */
+export type { ParallelSplitTemplateParams, ParallelSplitEntry, ParallelSplitBranchEntry } from './templates/parallel-split';
+
 // Additional utilities
 export { addInputTargetNodes } from './bot-generator/core/add-input-target-nodes';
 

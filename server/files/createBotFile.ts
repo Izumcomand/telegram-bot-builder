@@ -149,6 +149,39 @@ export async function createCompleteBotFiles(
   const protectContent = tokenRecord?.protectContent === 1;
   const saveIncomingMedia = tokenRecord?.saveIncomingMedia === 1;
 
+  // Получаем кастомные переменные окружения из БД
+  const customEnvVars = await storage.getEnvVariables(tokenId);
+  const customVariables = customEnvVars.map(v => ({
+    key: v.key,
+    // Резолвим ${{KEY}} ссылки в реальные значения из серверного окружения
+    value: v.value.startsWith('${{') && v.value.endsWith('}}')
+      ? (process.env[v.value.slice(3, -2)] ?? v.value)
+      : v.value,
+  }));
+
+  // Добавляем DATABASE_URL из окружения сервера если не задан пользователем
+  if (!customVariables.some(v => v.key === 'DATABASE_URL') && process.env.DATABASE_URL) {
+    customVariables.push({ key: 'DATABASE_URL', value: process.env.DATABASE_URL });
+  }
+
+  // Добавляем REDIS_URL из окружения сервера если не задан пользователем
+  if (!customVariables.some(v => v.key === 'REDIS_URL') && process.env.REDIS_URL) {
+    customVariables.push({ key: 'REDIS_URL', value: process.env.REDIS_URL });
+  }
+
+  // Добавляем Telethon userbot переменные из токена (если включён)
+  if (tokenRecord?.userbotEnabled === 1) {
+    if (tokenRecord.userbotApiId) {
+      customVariables.push({ key: 'USERBOT_API_ID', value: tokenRecord.userbotApiId });
+    }
+    if (tokenRecord.userbotApiHash) {
+      customVariables.push({ key: 'USERBOT_API_HASH', value: tokenRecord.userbotApiHash });
+    }
+    if (tokenRecord.userbotSessionString) {
+      customVariables.push({ key: 'USERBOT_SESSION_STRING', value: tokenRecord.userbotSessionString });
+    }
+  }
+
   const envContent = generateEnvFile(
     tokenRecord?.token || "YOUR_BOT_TOKEN_HERE",
     existingAdminIds,
@@ -160,6 +193,7 @@ export async function createCompleteBotFiles(
     protectContent,
     saveIncomingMedia,
     tokenId,
+    customVariables,
   );
   const envPath = join(botDir, '.env');
   writeFileSync(envPath, envContent, 'utf8');

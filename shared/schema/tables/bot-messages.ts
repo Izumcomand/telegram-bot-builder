@@ -32,6 +32,12 @@ export const botMessages = pgTable("bot_messages", {
   nodeId: text("node_id"),
   /** ID основного медиа */
   primaryMediaId: integer("primary_media_id").references(() => mediaFiles.id, { onDelete: "set null" }),
+  /** ID сообщения в Telegram (для удаления/редактирования через Telegram API) */
+  telegramMessageId: integer("telegram_message_id"),
+  /** Тип чата: 'private', 'group', 'supergroup', 'channel' */
+  chatType: text("chat_type").default("private"),
+  /** ID чата в Telegram (для групп отличается от user_id отправителя) */
+  chatId: text("chat_id"),
   /** Дата создания сообщения */
   createdAt: timestamp("created_at", { mode: "date", withTimezone: true }).defaultNow(),
 });
@@ -72,6 +78,12 @@ export const insertBotMessageSchema = z.object({
   nodeId: z.string().nullable().optional(),
   /** ID основного медиа */
   primaryMediaId: z.number().nullable().optional(),
+  /** ID сообщения в Telegram */
+  telegramMessageId: z.number().int().positive().nullable().optional(),
+  /** Тип чата: 'private', 'group', 'supergroup', 'channel' */
+  chatType: z.enum(["private", "group", "supergroup", "channel"]).default("private"),
+  /** ID чата в Telegram (для групп отличается от userId) */
+  chatId: z.string().nullable().optional(),
 });
 
 /** Схема вставки связи сообщения с медиа */

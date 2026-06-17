@@ -8,7 +8,6 @@ import type { Request, Response } from "express";
 import { storage } from "../../../storages/storage";
 import { resolveUserId } from "./utils/resolveUserId";
 import { getTelegramUser } from "./utils/getTelegramUser";
-import { searchLocalDatabase } from "./utils/searchLocalDatabase";
 
 /**
  * Поиск пользователя по username или ID
@@ -20,9 +19,8 @@ import { searchLocalDatabase } from "./utils/searchLocalDatabase";
  *
  * @description
  * Ищет пользователя в следующем порядке:
- * 1. user_bot_data (специфично для проекта)
- * 2. bot_users (глобальная таблица)
- * 3. Telegram API (по username или ID)
+ * 1. bot_users (таблица пользователей бота)
+ * 2. Telegram API (по username или ID)
  *
  * @route GET /api/projects/:projectId/bot/search-user/:query
  */
@@ -43,13 +41,22 @@ export async function searchUserHandler(req: Request, res: Response): Promise<vo
         }
 
         // Поиск в локальной базе данных
-        const localResult = searchLocalDatabase(
-            await storage.searchUserBotData(projectId, query),
-            await storage.searchBotUsers(query, projectId)
-        );
+        const botUsers = await storage.searchBotUsers(query, projectId);
 
-        if (localResult.found) {
-            res.json(localResult.data);
+        if (botUsers && botUsers.length > 0) {
+            const user = botUsers[0];
+            res.json({
+                success: true,
+                user: {
+                    id: user.userId,
+                    first_name: user.firstName,
+                    last_name: user.lastName,
+                    username: user.username,
+                    type: 'private'
+                },
+                userId: user.userId.toString(),
+                source: 'local'
+            });
             return;
         }
 

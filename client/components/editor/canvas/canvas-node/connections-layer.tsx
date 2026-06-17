@@ -18,7 +18,7 @@
  * @module ConnectionsLayer
  */
 
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Node } from '@/types/bot';
 import {
   KEYBOARD_LINK_PORT_TYPE,
@@ -196,7 +196,7 @@ function buildSmartPath(
   toH: number,
   fromPortOffset?: { x: number; y: number },
 ): string {
-  const isTrigger = fromNode.type === 'command_trigger' || fromNode.type === 'text_trigger' || fromNode.type === 'incoming_message_trigger' || fromNode.type === 'group_message_trigger' || (fromNode.type as any) === 'callback_trigger' || (fromNode.type as any) === 'incoming_callback_trigger' || (fromNode.type as any) === 'outgoing_message_trigger' || (fromNode.type as any) === 'managed_bot_updated_trigger';
+  const isTrigger = fromNode.type === 'command_trigger' || fromNode.type === 'text_trigger' || fromNode.type === 'incoming_message_trigger' || fromNode.type === 'group_message_trigger' || (fromNode.type as any) === 'callback_trigger' || (fromNode.type as any) === 'incoming_callback_trigger' || (fromNode.type as any) === 'outgoing_message_trigger' || (fromNode.type as any) === 'managed_bot_updated_trigger' || (fromNode.type as any) === 'schedule_trigger' || (fromNode.type as any) === 'userbot_edit_trigger';
   const xOffset = isTrigger ? TRIGGER_PORT_X_OFFSET : PORT_X_OFFSET;
 
   // Если передан offset порта кнопки — используем его, иначе правый край + центр узла
@@ -227,8 +227,8 @@ export function collectConnections(nodes: Node[]): Connection[] {
   const existingIds = new Set(nodes.map(n => n.id));
 
   nodes.forEach(node => {
-    // 1. Автопереход
-    if (node.data?.enableAutoTransition && node.data?.autoTransitionTo) {
+    // 1. Автопереход (исключаем loop — у него свои порты в пункте 10)
+    if (node.data?.enableAutoTransition && node.data?.autoTransitionTo && (node.type as any) !== 'loop') {
       const toId = node.data.autoTransitionTo as string;
       const targetNode = nodes.find((candidate) => candidate.id === toId);
       const isLegacyForwardSourceLink =
@@ -272,7 +272,7 @@ export function collectConnections(nodes: Node[]): Connection[] {
     }
 
     // 4. Соединение триггера команды, текстового триггера или триггера входящего сообщения с целевым узлом
-    if ((node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger') && node.data?.autoTransitionTo) {
+    if ((node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'schedule_trigger' || (node.type as any) === 'userbot_edit_trigger') && node.data?.autoTransitionTo) {
       const toId = node.data.autoTransitionTo as string;
       if (existingIds.has(toId)) {
         connections.push({ fromId: node.id, toId, type: 'trigger-next' });
@@ -289,6 +289,21 @@ export function collectConnections(nodes: Node[]): Connection[] {
             toId: branch.target,
             type: 'button-goto',
             label: branch.label,
+            buttonId: branch.id,
+          });
+        }
+      });
+    }
+
+    // 5.1 Ветки узла параллельного запуска
+    if ((node.type as any) === 'parallel_split') {
+      const parallelBranches: any[] = (node.data as any)?.parallelBranches || [];
+      parallelBranches.forEach((branch: any) => {
+        if (branch.target && existingIds.has(branch.target)) {
+          connections.push({
+            fromId: node.id,
+            toId: branch.target,
+            type: 'button-goto',
             buttonId: branch.id,
           });
         }
@@ -340,6 +355,30 @@ export function collectConnections(nodes: Node[]): Connection[] {
         connections.push({ fromId: node.id, toId: kbNodeId, type: 'keyboard-link' });
       }
     }
+
+    // 10. Соединения узла loop: тело (autoTransitionTo) и далее (afterLoopTo)
+    if ((node.type as any) === 'loop') {
+      const autoTransitionTo = (node.data as any)?.autoTransitionTo as string | undefined;
+      if (autoTransitionTo && existingIds.has(autoTransitionTo)) {
+        connections.push({
+          fromId: node.id,
+          toId: autoTransitionTo,
+          type: 'button-goto',
+          label: '↻ Тело',
+          buttonId: 'loop-body',
+        });
+      }
+      const afterLoopTo = (node.data as any)?.afterLoopTo as string | undefined;
+      if (afterLoopTo && existingIds.has(afterLoopTo)) {
+        connections.push({
+          fromId: node.id,
+          toId: afterLoopTo,
+          type: 'button-goto',
+          label: '→ Далее',
+          buttonId: 'loop-after',
+        });
+      }
+    }
   });
 
   return connections;
@@ -380,7 +419,7 @@ export function getRenderableConnections(
  * @param props - Свойства компонента
  * @returns SVG элемент с линиями соединений или null если нет соединений
  */
-export function ConnectionsLayer({ nodes, nodeSizes, onConnectionDelete, buttonPortYOffsets, draggingNodeId, onConnectionHover }: ConnectionsLayerProps) {
+function ConnectionsLayerComponent({ nodes, nodeSizes, onConnectionDelete, buttonPortYOffsets, draggingNodeId, onConnectionHover }: ConnectionsLayerProps) {
   /** Ширина узла по умолчанию если ResizeObserver ещё не сработал */
   const DEFAULT_WIDTH = 320;
   /** border-box высота узла по умолчанию (до первого срабатывания ResizeObserver) */
@@ -560,3 +599,17 @@ export function ConnectionsLayer({ nodes, nodeSizes, onConnectionDelete, buttonP
     </svg>
   );
 }
+
+/**
+ * Мемоизированный SVG-слой соединений.
+ *
+ * Обёрнут в React.memo, потому что его пропсы (`nodes`, `nodeSizes`,
+ * `onConnectionDelete`, `buttonPortYOffsets`, `draggingNodeId`,
+ * `onConnectionHover`) стабильны во время панорамирования и зума —
+ * эти жесты меняют только pan/zoom родителя, но не данные узлов.
+ * Без мемоизации слой пересобирал бы все пути соединений на каждый кадр
+ * жеста, что роняло FPS и проявлялось как мерцание холста.
+ *
+ * @returns Мемоизированный SVG-слой соединений
+ */
+export const ConnectionsLayer = memo(ConnectionsLayerComponent);

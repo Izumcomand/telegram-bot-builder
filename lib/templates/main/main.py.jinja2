@@ -24,6 +24,8 @@ async def main():
 
     _stop_event = asyncio.Event()
     _lock_acquired = False
+    _background_tasks: list = []  # Все фоновые задачи для корректной отмены при остановке
+    _webhook_runner = None  # aiohttp runner для корректного завершения webhook-сервера
 
     def signal_handler(signum, _frame):
         print(f"⚠️ Получен сигнал {signum}, начинаем корректное завершение...")
@@ -62,7 +64,7 @@ async def main():
                     except Exception:
                         pass
 
-            asyncio.create_task(_refresh_lock())
+            _background_tasks.append(asyncio.create_task(_refresh_lock()))
 
         # Публикуем событие о запуске бота в Redis (если доступен)
         if _redis_connected and _redis_client is not None:
@@ -93,6 +95,12 @@ async def main():
                         logging.info(f"📦 Загружено {len(_rows)} file_id из БД в кэш памяти")
             except Exception as _cache_err:
                 logging.warning(f"⚠️ Не удалось загрузить file_id кэш из БД: {_cache_err}")
+
+{%- if projectId %}
+        # Загрузка контента из таблицы _content
+        if db_pool:
+            await load_content(db_pool)
+{%- endif %}
 
         {%- if menuCommands and menuCommands | length > 0 %}
         await set_bot_commands()
@@ -136,7 +144,26 @@ async def main():
         {%- endif %}
 
         # Запускаем фоновую задачу TTL-очистки user_data
-        asyncio.create_task(cleanup_user_data())
+        _background_tasks.append(asyncio.create_task(cleanup_user_data()))
+
+{%- if hasUserbotNodes %}
+        # Подключаем Telethon userbot клиент
+        if userbot_client:
+            await userbot_client.connect()
+            if not await userbot_client.is_user_authorized():
+                logging.error("❌ Userbot не авторизован — проверьте USERBOT_SESSION_STRING")
+            else:
+                logging.info("🟣 Telethon userbot подключён")
+{%- endif %}
+
+{%- if projectId %}
+        # Фоновая перезагрузка контента из _content каждые 60 сек (fallback)
+        if db_pool:
+            _background_tasks.append(asyncio.create_task(_content_reload_loop(db_pool)))
+        # Мгновенное обновление контента через Redis pub/sub
+        if _redis_connected:
+            _background_tasks.append(asyncio.create_task(_content_subscribe_redis()))
+{%- endif %}
 
         # Выбор режима запуска: webhook или polling
         if WEBHOOK_URL:
@@ -160,17 +187,20 @@ async def main():
             await runner.setup()
             site = web.TCPSite(runner, host="0.0.0.0", port=WEBHOOK_PORT)
             await site.start()
+            _webhook_runner = runner
 
             logging.info(f"✅ Webhook сервер запущен на порту {WEBHOOK_PORT}")
             await _stop_event.wait()
 
             await runner.cleanup()
+            _webhook_runner = None
             await bot.delete_webhook()
         else:
             # Polling режим — стандартный запуск
             logging.info("🔄 Polling режим")
             # Запускаем polling и ждём сигнала остановки
             polling_task = asyncio.create_task(dp.start_polling(bot))
+            _background_tasks.append(polling_task)
             await _stop_event.wait()
             await dp.stop_polling()
             await polling_task
@@ -178,9 +208,36 @@ async def main():
         print("⚠️ Получен сигнал остановки, завершаем работу...")
     except SystemExit:
         print("⚠️ Системное завершение, завершаем работу...")
+    except asyncio.CancelledError:
+        print("⚠️ Бот остановлен воркером (CancelledError)")
     except Exception as e:
         logging.error(f"Ошибка: {e}")
     finally:
+        # Отменяем все фоновые задачи перед закрытием ресурсов
+        for _task in _background_tasks:
+            if not _task.done():
+                _task.cancel()
+        if _background_tasks:
+            try:
+                await asyncio.gather(*_background_tasks, return_exceptions=True)
+            except Exception:
+                pass
+        _background_tasks.clear()
+
+        # Останавливаем webhook-сервер если он был запущен (освобождаем порт)
+        if _webhook_runner:
+            try:
+                await _webhook_runner.cleanup()
+            except Exception:
+                pass
+        {%- if hasScheduleTrigger %}
+        # Останавливаем фоновые schedule-задачи
+        try:
+            await _cancel_schedule_tasks()
+        except Exception:
+            pass
+        {%- endif %}
+
         {%- if userDatabaseEnabled %}
         if db_pool:
             await db_pool.close()
@@ -206,6 +263,13 @@ async def main():
                 pass
 
         await bot.session.close()
+
+{%- if hasUserbotNodes %}
+        # Отключаем Telethon userbot
+        if userbot_client and userbot_client.is_connected():
+            await userbot_client.disconnect()
+            logging.info("🟣 Telethon userbot отключён")
+{%- endif %}
 
 
 if __name__ == "__main__":

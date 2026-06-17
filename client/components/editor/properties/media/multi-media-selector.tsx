@@ -245,27 +245,27 @@ export function MultiMediaSelector({
               Выбрать или загрузить файл
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-5xl">
+          <DialogContent className="sm:max-w-5xl p-3 sm:p-6">
             <DialogHeader>
-              <DialogTitle>
-                <i className="fas fa-folder-open mr-2 text-blue-600"></i>
+              <DialogTitle className="text-sm sm:text-lg leading-tight">
+                <i className="fas fa-folder-open mr-1.5 sm:mr-2 text-blue-600"></i>
                 Управление медиафайлами
               </DialogTitle>
             </DialogHeader>
 
             <Tabs defaultValue="upload" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="upload" className="flex items-center gap-2">
-                  <Upload className="w-4 h-4" />
-                  Загрузить
+                <TabsTrigger value="upload" className="flex items-center gap-1 sm:gap-2 text-[11px] sm:text-sm px-1 sm:px-3">
+                  <Upload className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Загрузить</span>
                 </TabsTrigger>
-                <TabsTrigger value="url" className="flex items-center gap-2">
-                  <LinkIcon className="w-4 h-4" />
-                  По URL
+                <TabsTrigger value="url" className="flex items-center gap-1 sm:gap-2 text-[11px] sm:text-sm px-1 sm:px-3">
+                  <LinkIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden xs:inline">По </span>URL
                 </TabsTrigger>
-                <TabsTrigger value="fileid" className="flex items-center gap-2">
-                  <Hash className="w-4 h-4" />
-                  Telegram file_id
+                <TabsTrigger value="fileid" className="flex items-center gap-1 sm:gap-2 text-[11px] sm:text-sm px-1 sm:px-3">
+                  <Hash className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                  <span className="hidden sm:inline">Telegram </span>file_id
                 </TabsTrigger>
               </TabsList>
 

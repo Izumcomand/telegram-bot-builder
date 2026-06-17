@@ -62,7 +62,7 @@ export const nodeSchema = z.object({
    * @deprecated Canonical content node is `message`.
    * `start` and `command` are kept only for backward compatibility with legacy projects.
    */
-  type: z.enum(['start', 'message', 'command', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'group_message_trigger', 'callback_trigger', 'managed_bot_updated_trigger', 'sticker', 'voice', 'animation', 'location', 'contact', 'pin_message', 'unpin_message', 'delete_message', 'forward_message', 'ban_user', 'unban_user', 'mute_user', 'unmute_user', 'kick_user', 'promote_user', 'demote_user', 'admin_rights', 'photo', 'video', 'audio', 'document', 'keyboard', 'input', 'condition', 'broadcast', 'client_auth', 'media', 'create_forum_topic', 'http_request', 'get_managed_bot_token', 'answer_callback_query', 'edit_message', 'set_variable', 'psql_query', 'convert_file']),
+  type: z.enum(['start', 'message', 'command', 'command_trigger', 'text_trigger', 'incoming_message_trigger', 'incoming_callback_trigger', 'outgoing_message_trigger', 'group_message_trigger', 'callback_trigger', 'managed_bot_updated_trigger', 'schedule_trigger', 'sticker', 'voice', 'animation', 'location', 'contact', 'pin_message', 'unpin_message', 'delete_message', 'forward_message', 'ban_user', 'unban_user', 'mute_user', 'unmute_user', 'kick_user', 'promote_user', 'demote_user', 'admin_rights', 'photo', 'video', 'audio', 'document', 'keyboard', 'input', 'condition', 'broadcast', 'client_auth', 'media', 'create_forum_topic', 'http_request', 'get_managed_bot_token', 'answer_callback_query', 'edit_message', 'set_variable', 'psql_query', 'convert_file', 'loop', 'bot_table', 'delay', 'userbot_message', 'userbot_click_button', 'userbot_inline_query', 'userbot_edit_trigger', 'parallel_split']),
   /** Позиция узла на холсте */
   position: z.object({
     /** Координата X */
@@ -95,6 +95,8 @@ export const nodeSchema = z.object({
     keyboardType: z.enum(['reply', 'inline', 'none']).default('none'),
     /** Массив кнопок клавиатуры */
     buttons: z.array(buttonSchema).default([]),
+    /** Перемешивать порядок inline-кнопок при каждом показе */
+    shuffleButtons: z.boolean().default(false),
     /** Включить генерацию кнопок из HTTP-ответа */
     enableDynamicButtons: z.boolean().default(false),
     /** Конфигурация динамических кнопок (генерация из HTTP-ответа) */
@@ -119,6 +121,8 @@ export const nodeSchema = z.object({
     markdown: z.boolean().default(false),
     /** Режим форматирования текста: "html", "markdown", "none" */
     formatMode: z.enum(['html', 'markdown', 'none']).default('none'),
+    /** Отключить превью ссылок в сообщении */
+    disableLinkPreview: z.boolean().default(false),
     /**
      * @deprecated Синонимы команды — устаревшее поле.
      * Вместо синонимов используйте отдельные узлы command_trigger на холсте.
@@ -149,8 +153,22 @@ export const nodeSchema = z.object({
     targetMessageId: z.string().optional(),
     /** ID сообщения-источника для пересылки */
     sourceMessageId: z.string().optional(),
-    /** Источник ID сообщения: "manual" — вручную, "variable" — из переменной, "last_message" — последнее */
-    messageIdSource: z.enum(['manual', 'variable', 'last_message']).default('last_message'),
+    /** Источник ID сообщения: "manual" — вручную, "variable" — из переменной, "last_message" — последнее, "current_message", "last_bot_message", "last_n", "custom" */
+    messageIdSource: z.enum(['manual', 'variable', 'last_message', 'current_message', 'last_bot_message', 'reply_message', 'range_from_reply', 'last_n', 'custom']).default('last_message'),
+    /** ID сообщения вручную или {переменная} (для delete_message custom) */
+    messageIdManual: z.string().optional(),
+    /** Количество последних сообщений для удаления (режим last_n) */
+    lastNCount: z.string().optional(),
+    /** Источник ID чата: "current_chat" | "custom" */
+    chatIdSource: z.enum(['current_chat', 'custom']).default('current_chat'),
+    /** ID чата вручную или {переменная} */
+    chatIdManual: z.string().optional(),
+    /** Не прерывать сценарий при ошибке удаления */
+    ignoreErrors: z.boolean().default(true),
+    /** Множественное удаление из переменной-массива */
+    bulkDelete: z.boolean().default(false),
+    /** Имя переменной с массивом message_id */
+    bulkMessageIdsVariable: z.string().optional(),
     /** Источник ID сообщения для пересылки: "current_message", "last_message", "manual", "variable" */
     sourceMessageIdSource: z.enum(['current_message', 'last_message', 'manual', 'variable']).default('current_message'),
     /** ID узла, от которого пришла связь к forward_message */
@@ -379,6 +397,12 @@ export const nodeSchema = z.object({
     defaultValue: z.string().optional(),
     /** Добавлять значение к существующей переменной, а не перезаписывать */
     appendVariable: z.boolean().default(false),
+    /** Сохранять метаданные медиа в отдельные переменные (суффиксы _thumbnail, _duration и т.д.) */
+    saveMediaMetadata: z.boolean().optional().default(false),
+    /** Список включённых суффиксов метаданных (если пуст — сохраняются все) */
+    mediaMetadataSuffixes: z.array(z.string()).optional().default([]),
+    /** Кастомные имена переменных метаданных: ключ — суффикс, значение — имя */
+    mediaMetadataCustomNames: z.record(z.string(), z.string()).optional().default({}),
     /** Фильтры переменных (ключ — имя переменной, значение — фильтр) */
     variableFilters: z.record(z.string()).default({}),
     /** Включить обработку действий пользователей */
@@ -628,6 +652,23 @@ export const nodeSchema = z.object({
       /** ID целевого узла для перехода по этой ветке */
       target: z.string().optional(),
     })).default([]),
+    /** Ветки узла параллельного запуска (parallel_split) */
+    parallelBranches: z.array(z.object({
+      /** Уникальный идентификатор ветки (порта) */
+      id: z.string(),
+      /** Подпись порта на холсте */
+      label: z.string().default(''),
+      /** ID стартовой ноды ветки */
+      target: z.string().optional(),
+      /** ID ноды, запускаемой при ошибке ветки (фоллбек для паттерна сбора) */
+      onErrorTarget: z.string().optional(),
+    })).optional().default([]),
+    /** Лимит одновременных веток parallel_split (0 = без лимита) */
+    maxConcurrent: z.number().optional().default(5),
+    /** Ждать завершения всех веток parallel_split перед выходом из обработчика */
+    awaitAll: z.boolean().optional().default(false),
+    /** Не запускать parallel_split повторно, пока предыдущий прогон пользователя не завершён */
+    skipIfRunning: z.boolean().optional().default(true),
     /** Список получателей сообщения (для узлов message и media) */
     messageSendRecipients: z.array(z.object({
       /** Уникальный ID получателя */
@@ -715,6 +756,21 @@ export const nodeSchema = z.object({
     httpRequestPaginationLimit: z.number().default(10).optional(),
     /** Максимальное количество страниц для режима fetch_all */
     httpRequestPaginationMaxPages: z.number().default(20).optional(),
+    /** Включить batch-режим: параллельные запросы по массиву */
+    httpRequestBatchEnabled: z.boolean().default(false).optional(),
+    /** Переменная-источник с массивом для batch-режима */
+    httpRequestBatchSource: z.string().optional(),
+    /** Имя элемента массива (для подстановки в URL/path) */
+    httpRequestBatchItemVar: z.string().default('item').optional(),
+    /** Переменная для сохранения массива результатов */
+    httpRequestBatchResultVariable: z.string().optional(),
+    /** Поля результата batch-режима: [{key: "name", value: "{item.name}"}] */
+    httpRequestBatchResultFields: z.array(z.object({
+      /** Имя поля в объекте результата */
+      key: z.string(),
+      /** Шаблон значения ({item.field} или __extracted__ для извлечённого) */
+      value: z.string(),
+    })).optional().default([]),
     /** Словарь обложек медиафайлов: ключ — URL видео, значение — URL обложки */
     attachedMediaThumbnails: z.record(z.string(), z.string()).optional().default({}),
     /** SQL-запрос для узла psql_query, поддерживает {переменные} */

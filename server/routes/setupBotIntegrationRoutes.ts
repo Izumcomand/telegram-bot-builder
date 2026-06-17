@@ -11,9 +11,9 @@
 import type { Express } from "express";
 import { getBotDataHandler, getAvatarHandler } from "./botIntegration/handlers/botData";
 import { getTelegramFileHandler } from "./botIntegration/handlers/botData/getTelegramFileHandler";
-import { getMessagesHandler, sendMessageHandler, sendNodeMessageHandler, saveMessageHandler, deleteMessagesHandler } from "./botIntegration/handlers/messages";
-import { registerTelegramMediaHandler } from "./botIntegration/handlers/media";
-import { getGroupsHandler, createGroupHandler, updateGroupHandler, deleteGroupHandler } from "./botIntegration/handlers/groups";
+import { getProjectFilesHandler, addProjectFileHandler, deleteProjectFilesHandler } from "./botIntegration/handlers/botData/getProjectFilesHandler";
+import { getMessagesHandler, sendMessageHandler, sendNodeMessageHandler, saveMessageHandler, deleteMessagesHandler, deleteSingleMessageHandler, editSingleMessageHandler, getGroupMessagesHandler } from "./botIntegration/handlers/messages";
+import { getGroupsHandler, createGroupHandler, updateGroupHandler, deleteGroupHandler, syncGroupHandler } from "./botIntegration/handlers/groups";
 import { getBotInfoHandler, updateBotNameHandler, updateBotDescriptionHandler, updateBotShortDescriptionHandler } from "./botIntegration/handlers/botInfo";
 import { sendGroupMessageHandler, getGroupInfoHandler, getGroupMembersCountHandler, getBotAdminStatusHandler, getGroupAdminsHandler, getGroupMembersHandler, getSavedMembersHandler } from "./botIntegration/handlers/telegramGroups";
 import { checkMemberHandler, banMemberHandler, unbanMemberHandler, promoteMemberHandler, demoteMemberHandler } from "./botIntegration/groups/members";
@@ -22,7 +22,7 @@ import { restrictMemberHandler } from "./botIntegration/groups/members";
 import { setGroupPhotoHandler, setGroupTitleHandler, setGroupDescriptionHandler, setGroupUsernameHandler } from "./botIntegration/groups/settings";
 import { pinMessageHandler, unpinMessageHandler, createInviteLinkHandler, deleteMessageHandler } from "./botIntegration/groups/moderation";
 import { telegramSettingsHandler, groupMembersHandler } from "./botIntegration/telegram";
-import { createBroadcastHandler, getBroadcastsHandler, getBroadcastDetailHandler, stopBroadcastHandler, previewAudienceHandler } from "./botIntegration/handlers/broadcasts";
+import { createBroadcastHandler, getBroadcastsHandler, getBroadcastDetailHandler, stopBroadcastHandler, previewAudienceHandler, deleteBroadcastHandler, editBroadcastHandler } from "./botIntegration/handlers/broadcasts";
 
 /**
  * Настраивает маршруты интеграции с ботами
@@ -74,6 +74,37 @@ export function setupBotIntegrationRoutes(app: Express) {
     app.get("/api/projects/:projectId/telegram-file", getTelegramFileHandler);
 
     /**
+     * Обработчик маршрута GET /api/projects/:projectId/files
+     *
+     * Возвращает файлы проекта из разных источников (incoming/outgoing/uploaded)
+     * с поддержкой фильтрации по типу медиа и пагинации.
+     *
+     * @route GET /api/projects/:projectId/files?source=incoming|outgoing|uploaded
+     */
+    app.get("/api/projects/:projectId/files", getProjectFilesHandler);
+
+    /**
+     * Обработчик маршрута POST /api/projects/:projectId/files
+     *
+     * Добавляет file_id вручную в файловое хранилище проекта.
+     * Создаёт запись в media_files с маппингом tokenId → file_id.
+     *
+     * @route POST /api/projects/:projectId/files
+     */
+    app.post("/api/projects/:projectId/files", addProjectFileHandler);
+
+    /**
+     * Обработчик маршрута DELETE /api/projects/:projectId/files
+     *
+     * Массовое удаление файлов проекта.
+     * Для uploaded — удаляет записи из media_files и физические файлы.
+     * Для incoming/outgoing — удаляет записи из bot_messages.
+     *
+     * @route DELETE /api/projects/:projectId/files
+     */
+    app.delete("/api/projects/:projectId/files", deleteProjectFilesHandler);
+
+    /**
      * Обработчик маршрута GET /api/projects/:projectId/users/:userId/messages
      *
      * Возвращает сообщения пользователя для указанного проекта
@@ -81,6 +112,15 @@ export function setupBotIntegrationRoutes(app: Express) {
      * @route GET /api/projects/:projectId/users/:userId/messages
      */
     app.get("/api/projects/:projectId/users/:userId/messages", getMessagesHandler);
+
+    /**
+     * Обработчик маршрута GET /api/projects/:projectId/groups/:groupId/messages
+     *
+     * Возвращает все сообщения группового чата по Telegram chat_id
+     *
+     * @route GET /api/projects/:projectId/groups/:groupId/messages
+     */
+    app.get("/api/projects/:projectId/groups/:groupId/messages", getGroupMessagesHandler);
 
     /**
      * Обработчик маршрута POST /api/projects/:projectId/users/:userId/send-message
@@ -119,19 +159,30 @@ export function setupBotIntegrationRoutes(app: Express) {
     app.delete("/api/projects/:projectId/users/:userId/messages", deleteMessagesHandler);
 
     /**
-     * Обработчик маршрута POST /api/projects/:projectId/media/register-telegram-photo
+     * Удаление одного сообщения из диалога
      *
-     * Регистрирует медиафайл из Telegram и связывает его с сообщением
-     *
-     * @route POST /api/projects/:projectId/media/register-telegram-photo
+     * @route DELETE /api/projects/:projectId/messages/:messageId
      */
-    app.post("/api/projects/:projectId/media/register-telegram-photo", registerTelegramMediaHandler);
+    app.delete("/api/projects/:projectId/messages/:messageId", deleteSingleMessageHandler);
+
+    /**
+     * Редактирование одного сообщения бота в диалоге
+     *
+     * @route PATCH /api/projects/:projectId/messages/:messageId
+     */
+    app.patch("/api/projects/:projectId/messages/:messageId", editSingleMessageHandler);
 
     // API групп ботов
     app.get("/api/projects/:id/groups", getGroupsHandler);
     app.post("/api/projects/:id/groups", createGroupHandler);
     app.put("/api/projects/:projectId/groups/:groupId", updateGroupHandler);
     app.delete("/api/projects/:projectId/groups/:groupId", deleteGroupHandler);
+
+    /**
+     * Синхронизация названия и аватарки группы из Telegram
+     * @route POST /api/projects/:projectId/groups/:groupId/sync
+     */
+    app.post("/api/projects/:projectId/groups/:groupId/sync", syncGroupHandler);
 
     // Получение информации о боте (getMe)
     app.get("/api/projects/:id/bot/info", getBotInfoHandler);
@@ -202,4 +253,6 @@ export function setupBotIntegrationRoutes(app: Express) {
     app.post("/api/projects/:projectId/broadcasts/preview-audience", previewAudienceHandler);
     app.get("/api/projects/:projectId/broadcasts/:broadcastId", getBroadcastDetailHandler);
     app.post("/api/projects/:projectId/broadcasts/:broadcastId/stop", stopBroadcastHandler);
+    app.put("/api/projects/:projectId/broadcasts/:broadcastId", editBroadcastHandler);
+    app.delete("/api/projects/:projectId/broadcasts/:broadcastId", deleteBroadcastHandler);
 }

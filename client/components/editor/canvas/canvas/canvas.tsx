@@ -5,6 +5,7 @@
  * историю операций и специальные семантики соединений на канвасе.
  * Для `forward_message` связь от message/media-узла трактуется как
  * привязка источника сообщения, а не как автопереход выполнения.
+ * Зум к курсору/щипку использует ref-зеркала pan/zoom для синхронности.
  */
 
 import { useRef, useCallback, useState, useEffect, useMemo } from 'react';
@@ -12,15 +13,23 @@ import { CanvasSheets } from '@/components/editor/canvas/canvas-sheets';
 import { useTouchGestures } from './use-touch-gestures';
 import { CanvasToolbar } from './canvas-toolbar';
 import { CanvasContent } from './canvas-content';
+import { MobileCanvasFab } from './mobile-canvas-fab';
 import { useConnectionDrag } from './use-connection-drag';
+import { useMarqueeSelection } from './use-marquee-selection';
+import { useMoveNodesToSheet } from './use-move-nodes-to-sheet';
+import { useMoveNodesToProject } from './use-move-nodes-to-project';
+import { MarqueeOverlay } from './marquee-overlay';
+import { MultiSelectionToolbar } from './multi-selection-toolbar';
 import { clearKeyboardNodeId, setKeyboardNodeId } from '../canvas-node/keyboard-connection';
 import { PortType } from '../canvas-node/port-colors';
 import { getCanvasViewportMetrics, screenPointToCanvasPoint } from './utils/canvas-coordinate-utils';
 
+import { toast } from '@/hooks/use-toast';
 import { Node, ComponentDefinition } from '@/types/bot';
 import type { CommandPreset } from '@/components/editor/sidebar/massive/commands';
 import { BotDataWithSheets } from '@shared/schema';
 import { SheetsManager } from '@/utils/sheets/sheets-manager';
+import { generateNextSheetName } from '@/utils/sheets/generate-next-sheet-name';
 import { nanoid } from 'nanoid';
 import { generateButtonId } from '@/utils/generate-button-id';
 
@@ -187,6 +196,8 @@ interface CanvasProps {
   suppressAutoFit?: boolean;
   /** ID проекта (для превью Telegram file_id через прокси) */
   projectId?: number;
+  /** Список всех проектов (для переноса узлов в другой проект) */
+  projects?: Array<{ id: number; name: string; ownerId: number | null; data?: unknown }>;
 }
 
 export function Canvas({
@@ -238,6 +249,9 @@ export function Canvas({
   onViewChange,
   suppressAutoFit,
   projectId,
+  projects = [],
+  onOpenMobileSidebar,
+  onOpenMobileProperties,
 }: CanvasProps) {
   const canvasRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -247,6 +261,20 @@ export function Canvas({
   const [isDragOver, setIsDragOver] = useState(false);
   const [zoom, setZoom] = useState(100);
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  /**
+   * Ref-зеркала pan/zoom для синхронного доступа в обработчиках колеса и
+   * touch-жестов. События зума приходят быстрее, чем React успевает
+   * перерисоваться, поэтому чтение pan/zoom из замыкания давало устаревшие
+   * значения и якорь зума «уносило» в сторону. Refs всегда содержат актуальные.
+   */
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  /** Флаг плавной анимации трансформации — включается ТОЛЬКО для кнопочного
+   * зума (кнопки, «уместить», фокус). Интерактивный зум колесом/щипком идёт
+   * мгновенно без CSS-перехода, иначе при медленных шагах возникает мерцание. */
+  const [animateTransform, setAnimateTransform] = useState(false);
+  /** Таймер сброса флага анимации трансформации */
+  const animateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [lastPanPosition, setLastPanPosition] = useState({ x: 0, y: 0 });
@@ -276,12 +304,44 @@ export function Canvas({
       .map(s => ({ id: s.id, name: s.name }));
   }, [botData]);
 
+  /** Состояние мульти-выделения узлов рамкой */
+  const {
+    tool,
+    setTool,
+    toggleTool,
+    selectedNodeIds,
+    marqueeRect,
+    startMarquee,
+    updateMarquee,
+    finishMarquee,
+    clearSelection,
+    toggleNodeSelection,
+  } = useMarqueeSelection();
+
+  /** Групповое перемещение выделенных узлов в листы */
+  const { moveNodesToSheet, moveNodesToNewSheet } = useMoveNodesToSheet(botData, onBotDataUpdate);
+
+  /** Список других проектов (без текущего) для меню "В проект" */
+  const otherProjects = useMemo(
+    () => projects.filter(p => p.id !== projectId).map(p => ({ id: p.id, name: p.name, ownerId: p.ownerId })),
+    [projects, projectId]
+  );
+
+  /** Групповой перенос выделенных узлов в другой проект (в новый лист) */
+  const { moveNodesToProject } = useMoveNodesToProject({ projectId, botData, onBotDataUpdate, projects });
+
   // Ref для отслеживания последнего набора узлов при autoFitOnLoad
   const lastAutoFitNodesKeyRef = useRef<string>('');
   const fitToContentRef = useRef<() => void>(() => {});
 
   // Флаг что был запрошен принудительный fit (не ждём 50% nodeSizes)
   const forceFitRef = useRef(false);
+
+  /**
+   * Флаг первой загрузки — при первом auto-fit всегда вписываем,
+   * при последующих (смена листа) проверяем localStorage
+   */
+  const isFirstAutoFitRef = useRef(true);
 
   // Автоматически вписываем содержимое в экран при первой загрузке узлов
   useEffect(() => {
@@ -298,6 +358,16 @@ export function Canvas({
 
     if (nodesKey === lastAutoFitNodesKeyRef.current) return;
 
+    // При смене листа (не первая загрузка) проверяем localStorage
+    if (!isFirstAutoFitRef.current) {
+      try {
+        if (localStorage.getItem('canvas-auto-fit-sheet') === 'false') {
+          lastAutoFitNodesKeyRef.current = nodesKey;
+          return;
+        }
+      } catch { /* localStorage недоступен — разрешаем fit */ }
+    }
+
     // Если был принудительный fit — не ждём nodeSizes, вписываем сразу
     if (!forceFitRef.current) {
       const coveredCount = nodes.filter(n => nodeSizes.has(n.id)).length;
@@ -306,29 +376,60 @@ export function Canvas({
 
     forceFitRef.current = false;
     lastAutoFitNodesKeyRef.current = nodesKey;
+    isFirstAutoFitRef.current = false;
     const timer = setTimeout(() => fitToContentRef.current(), 150);
     return () => clearTimeout(timer);
   }, [autoFitOnLoad, nodes, nodeSizes, suppressAutoFit]);
+
+  /**
+   * Запускает кратковременную плавную анимацию трансформации (для кнопочного
+   * зума). Сбрасывает флаг через 220мс — чуть дольше длительности перехода.
+   */
+  const triggerTransformAnimation = useCallback(() => {
+    setAnimateTransform(true);
+    if (animateTimerRef.current) clearTimeout(animateTimerRef.current);
+    animateTimerRef.current = setTimeout(() => setAnimateTransform(false), 220);
+  }, []);
+
+  /**
+   * Центрирует холст на узле: выделяет узел и подбирает масштаб/смещение
+   * @param nodeId - Идентификатор узла для фокусировки
+   */
+  const focusOnNode = useCallback((nodeId: string) => {
+    const node = nodes.find(n => n.id === nodeId);
+    if (!node) return;
+    triggerTransformAnimation();
+    onNodeSelect(nodeId);
+    const scrollContainer = canvasRef.current?.parentElement;
+    if (!scrollContainer) return;
+    const containerWidth = scrollContainer.clientWidth;
+    const containerHeight = scrollContainer.clientHeight;
+    const nodeW = nodeSizes.get(nodeId)?.width ?? 320;
+    const nodeH = nodeSizes.get(nodeId)?.height ?? 200;
+
+    // Подбираем масштаб чтобы узел занимал ~60% экрана, но не больше 100%
+    const scaleX = (containerWidth * 0.6) / nodeW;
+    const scaleY = (containerHeight * 0.6) / nodeH;
+    const targetZoom = Math.min(Math.min(scaleX, scaleY) * 100, 100);
+    const newZoom = Math.max(targetZoom, 30);
+
+    setZoom(newZoom);
+    const newPanX = containerWidth / 2 - (node.position.x + nodeW / 2) * (newZoom / 100);
+    const newPanY = containerHeight / 2 - (node.position.y + nodeH / 2) * (newZoom / 100);
+    setPan({ x: newPanX, y: newPanY });
+  }, [nodes, nodeSizes, onNodeSelect, setZoom, setPan, triggerTransformAnimation]);
 
   /**
    * Фокусировка на узле: выделяет узел и центрирует его в видимой области
    */
   useEffect(() => {
     if (!focusNodeId) return;
-    const node = nodes.find(n => n.id === focusNodeId);
-    if (!node) return;
-    onNodeSelect(focusNodeId);
-    const scrollContainer = canvasRef.current?.parentElement;
-    if (!scrollContainer) return;
-    const containerWidth = scrollContainer.clientWidth;
-    const containerHeight = scrollContainer.clientHeight;
-    const nodeW = nodeSizes.get(focusNodeId)?.width ?? 320;
-    const nodeH = nodeSizes.get(focusNodeId)?.height ?? 200;
-    const newPanX = containerWidth / 2 - (node.position.x + nodeW / 2) * (zoom / 100);
-    const newPanY = containerHeight / 2 - (node.position.y + nodeH / 2) * (zoom / 100);
-    setPan({ x: newPanX, y: newPanY });
+    focusOnNode(focusNodeId);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNodeId]);
+
+  // Состояние открытия поиска узлов (управляется кнопкой и горячей клавишей Ctrl+F)
+  const [searchOpen, setSearchOpen] = useState(false);
 
   // Система истории действий — используем внешнюю историю если передана, иначе локальную
   const [localActionHistory, setLocalActionHistory] = useState<Action[]>([]);
@@ -424,6 +525,13 @@ export function Canvas({
               b.id === buttonId ? { ...b, target: targetNodeId } : b
             );
           }
+          /** Ветки узла параллельного запуска — порты работают как у condition */
+          const parallelBranches = (data.parallelBranches as any[] | undefined) ?? [];
+          if (parallelBranches.length > 0) {
+            data.parallelBranches = parallelBranches.map((b: any) =>
+              b.id === buttonId ? { ...b, target: targetNodeId } : b
+            );
+          }
           return { ...n, data };
         }
 
@@ -484,6 +592,13 @@ export function Canvas({
           const branches = (data.branches as any[] | undefined) ?? [];
           if (branches.length > 0) {
             data.branches = branches.map((b: any) =>
+              b.target === toId ? { ...b, target: undefined } : b
+            );
+          }
+          /** Разрыв связи ветки параллельного запуска */
+          const parallelBranches = (data.parallelBranches as any[] | undefined) ?? [];
+          if (parallelBranches.length > 0) {
+            data.parallelBranches = parallelBranches.map((b: any) =>
               b.target === toId ? { ...b, target: undefined } : b
             );
           }
@@ -730,43 +845,50 @@ export function Canvas({
 
   // Масштабирование от центра
   const zoomFromCenter = useCallback((newZoom: number) => {
+    triggerTransformAnimation();
     const { width, height } = getContainerDimensions();
     const centerX = width / 2;
     const centerY = height / 2;
 
-    setPan(prevPan => {
-      const prevZoomPercent = zoom / 100;
-      const newZoomPercent = newZoom / 100;
+    // Берём актуальные pan/zoom из refs, а не из stale-замыкания. Иначе при
+    // удержании кнопок +/− (long-press) повторные вызовы считают от старого
+    // zoom, и холст «прыгает» из стороны в сторону.
+    const currentZoom = zoomRef.current;
+    const currentPan = panRef.current;
+    const prevZoomPercent = currentZoom / 100;
+    const newZoomPercent = newZoom / 100;
 
-      // Вычисляем координаты центра в canvas координатах
-      const centerCanvasX = (centerX - prevPan.x) / prevZoomPercent;
-      const centerCanvasY = (centerY - prevPan.y) / prevZoomPercent;
+    // Координаты центра экрана в canvas-координатах при текущем масштабе
+    const centerCanvasX = (centerX - currentPan.x) / prevZoomPercent;
+    const centerCanvasY = (centerY - currentPan.y) / prevZoomPercent;
 
-      // Вычисляем новый pan, чтобы центр остался на месте
-      return {
-        x: centerX - centerCanvasX * newZoomPercent,
-        y: centerY - centerCanvasY * newZoomPercent
-      };
-    });
+    // Новый pan, чтобы центр остался на месте
+    const newPan = {
+      x: centerX - centerCanvasX * newZoomPercent,
+      y: centerY - centerCanvasY * newZoomPercent,
+    };
 
+    // Синхронно обновляем refs — следующий тик long-press увидит свежие значения
+    zoomRef.current = newZoom;
+    panRef.current = newPan;
+    setPan(newPan);
     setZoom(newZoom);
-  }, [zoom, getContainerDimensions]);
+  }, [getContainerDimensions, triggerTransformAnimation]);
 
   // Zoom utility functions
   const zoomIn = useCallback(() => {
-    const newZoom = Math.min(zoom * 1.05, 200);
-    zoomFromCenter(newZoom);
-  }, [zoom, zoomFromCenter]);
+    zoomFromCenter(Math.min(zoomRef.current * 1.05, 200));
+  }, [zoomFromCenter]);
 
   const zoomOut = useCallback(() => {
-    const newZoom = Math.max(zoom * 0.95, 1);
-    zoomFromCenter(newZoom);
-  }, [zoom, zoomFromCenter]);
+    zoomFromCenter(Math.max(zoomRef.current * 0.95, 1));
+  }, [zoomFromCenter]);
 
   const resetZoom = useCallback(() => {
+    triggerTransformAnimation();
     setZoom(100);
     setPan({ x: 0, y: 0 });
-  }, []);
+  }, [triggerTransformAnimation]);
 
   const setZoomLevel = useCallback((level: number) => {
     const constrainedZoom = Math.max(Math.min(level, 200), 1);
@@ -903,12 +1025,13 @@ export function Canvas({
 
     setZoom(newZoom);
     setPan({ x: newPanX, y: newPanY });
+    triggerTransformAnimation();
     // Сбрасываем scroll контейнера — pan управляет позицией через transform
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
       scrollContainerRef.current.scrollLeft = 0;
     }
-  }, [nodes, nodeSizes, zoom]);
+  }, [nodes, nodeSizes, zoom, triggerTransformAnimation]);
 
   // Держим ref актуальным чтобы autoFitOnLoad эффект не имел stale closure
   fitToContentRef.current = fitToContent;
@@ -927,41 +1050,68 @@ export function Canvas({
     return () => clearTimeout(timer);
   }, [fitTrigger]);
 
+  /** Синхронизируем ref-зеркала с состоянием при любых внешних изменениях */
+  useEffect(() => { zoomRef.current = zoom; }, [zoom]);
+  useEffect(() => { panRef.current = pan; }, [pan]);
+
+  /**
+   * RAF-throttle: накапливаем pan/zoom изменения от быстрых событий колеса/
+   * touch и сбрасываем в React-state ровно один раз за анимационный кадр.
+   * Это убирает джанк при зуме: вместо N рендеров за кадр — всегда 1.
+   */
+  const rafIdRef = useRef<number | null>(null);
+  const pendingUpdateRef = useRef<{ pan: { x: number; y: number }; zoom: number } | null>(null);
+
+  /** Планирует обновление state на следующий кадр (если ещё не запланировано) */
+  const scheduleStateFlush = useCallback(() => {
+    if (rafIdRef.current !== null) return;
+    rafIdRef.current = requestAnimationFrame(() => {
+      rafIdRef.current = null;
+      const pending = pendingUpdateRef.current;
+      if (!pending) return;
+      pendingUpdateRef.current = null;
+      setPan(pending.pan);
+      setZoom(pending.zoom);
+    });
+  }, []);
+
   // Handle wheel zoom (native handler, registered with { passive: false })
   const handleWheel = useCallback((e: WheelEvent) => {
     // Всегда предотвращаем нативный скролл контейнера — управляем паном сами
     e.preventDefault();
 
     if (e.ctrlKey || e.metaKey) {
-      // Зум относительно позиции курсора
-      const delta = e.deltaY;
-      const zoomFactor = delta > 0 ? 0.9 : 1.1;
+      // Зум (pinch на тачпаде или Ctrl+scroll)
+      const sensitivity = 0.015;
+      const zoomFactor = Math.max(0.7, Math.min(1.4, 1 - e.deltaY * sensitivity));
 
-      // Используем scrollContainer (видимая область), а не сам canvas-div
-      const container = scrollContainerRef.current ?? canvasRef.current?.parentElement;
-      const rect = container?.getBoundingClientRect();
-      if (rect) {
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
+      const newZoom = Math.max(Math.min(currentZoom * zoomFactor, 200), 1);
 
-        const newZoom = Math.max(Math.min(zoom * zoomFactor, 200), 1);
-        const zoomRatio = newZoom / zoom;
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const pointerX = rect ? e.clientX - rect.left : 0;
+      const pointerY = rect ? e.clientY - rect.top : 0;
+      const zoomRatio = newZoom / currentZoom;
 
-        setPan(prev => ({
-          x: mouseX - (mouseX - prev.x) * zoomRatio,
-          y: mouseY - (mouseY - prev.y) * zoomRatio
-        }));
+      const newPan = {
+        x: pointerX - (pointerX - currentPan.x) * zoomRatio,
+        y: pointerY - (pointerY - currentPan.y) * zoomRatio,
+      };
 
-        setZoom(newZoom);
-      }
+      zoomRef.current = newZoom;
+      panRef.current = newPan;
+      pendingUpdateRef.current = { pan: newPan, zoom: newZoom };
+      scheduleStateFlush();
     } else {
-      // Обычный скролл/тачпад без Ctrl — двигаем пан вместо скролла контейнера
-      setPan(prev => ({
-        x: prev.x - e.deltaX,
-        y: prev.y - e.deltaY
-      }));
+      // Обычный скролл/тачпад без Ctrl — двигаем пан
+      const currentPan = panRef.current;
+      const newPan = { x: currentPan.x - e.deltaX, y: currentPan.y - e.deltaY };
+      panRef.current = newPan;
+      pendingUpdateRef.current = { pan: newPan, zoom: zoomRef.current };
+      scheduleStateFlush();
     }
-  }, [zoom]);
+  }, [scheduleStateFlush]);
 
   // Handle panning
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
@@ -970,6 +1120,17 @@ export function Canvas({
     const isEmptyCanvas = target.classList.contains('canvas-grid-modern') ||
       target.closest('.canvas-grid-modern') === target;
 
+    // Инструмент рамки активен и ЛКМ по пустому холсту без Alt — начинаем рамку
+    if (tool === 'marquee' && e.button === 0 && !e.altKey && isEmptyCanvas) {
+      e.preventDefault();
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const x = rect ? e.clientX - rect.left : e.clientX;
+      const y = rect ? e.clientY - rect.top : e.clientY;
+      clearSelection();
+      startMarquee(x, y);
+      return;
+    }
+
     if (e.button === 1 || e.button === 2 || (e.button === 0 && e.altKey) ||
       (e.button === 0 && isEmptyCanvas)) { // Middle mouse, right mouse, Alt+click, or left-click on empty canvas
       e.preventDefault();
@@ -977,19 +1138,7 @@ export function Canvas({
       setPanStart({ x: e.clientX, y: e.clientY });
       setLastPanPosition(pan);
     }
-  }, [pan]);
-
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    if (isPanning) {
-      const deltaX = e.clientX - panStart.x;
-      const deltaY = e.clientY - panStart.y;
-
-      setPan({
-        x: lastPanPosition.x + deltaX,
-        y: lastPanPosition.y + deltaY
-      });
-    }
-  }, [isPanning, panStart, lastPanPosition]);
+  }, [pan, tool, clearSelection, startMarquee]);
 
   const handleMouseUp = useCallback(() => {
     setIsPanning(false);
@@ -1000,6 +1149,12 @@ export function Canvas({
     canvasRef,
     pan,
     zoom,
+    panRef,
+    zoomRef,
+    scheduleFlush: (newPan, newZoom) => {
+      pendingUpdateRef.current = { pan: newPan, zoom: newZoom };
+      scheduleStateFlush();
+    },
     setPan,
     setZoom,
     isTouchPanning,
@@ -1060,6 +1215,15 @@ export function Canvas({
         !!target.closest('[data-properties-panel]');
 
       if (!isInputField) {
+        // Escape — снимает рамочное мульти-выделение узлов и возвращает
+        // инструмент в режим курсора, если активен режим рамки.
+        if (e.key === 'Escape' && (selectedNodeIds.size > 0 || tool === 'marquee')) {
+          e.preventDefault();
+          clearSelection();
+          if (tool === 'marquee') setTool('pointer');
+          return;
+        }
+
         // Обработка клавиши Delete для удаления выбранного узла
         if (e.key === 'Delete' && selectedNodeId && onNodeDelete) {
           e.preventDefault();
@@ -1071,6 +1235,13 @@ export function Canvas({
       }
 
       if (e.ctrlKey || e.metaKey) {
+        // Ctrl+F — открыть поиск узлов (e.code не зависит от раскладки клавиатуры)
+        if (e.code === 'KeyF' && !e.shiftKey) {
+          e.preventDefault();
+          setSearchOpen(true);
+          return;
+        }
+
         // Если фокус в поле ввода — пропускаем команды холста.
         // Исключение: Ctrl+S (сохранение) работает всегда.
         if (isInputField) {
@@ -1126,6 +1297,20 @@ export function Canvas({
           case '1':
             e.preventDefault();
             fitToContent();
+            break;
+          case '2':
+            e.preventDefault();
+            {
+              /** Ctrl+2 — переключение авто-уместить при смене листа */
+              const current = localStorage.getItem('canvas-auto-fit-sheet');
+              const newValue = current === 'false' ? 'true' : 'false';
+              localStorage.setItem('canvas-auto-fit-sheet', newValue);
+              toast({
+                title: newValue === 'true'
+                  ? 'Авто-уместить при смене листа: ВКЛ'
+                  : 'Авто-уместить при смене листа: ВЫКЛ',
+              });
+            }
             break;
           case 'z':
           case 'Z':
@@ -1213,21 +1398,30 @@ export function Canvas({
       document.removeEventListener('gesturechange', handleGesture);
       document.removeEventListener('gestureend', handleGesture);
     };
-  }, [zoomIn, zoomOut, resetZoom, fitToContent, onUndo, onRedo, canUndo, canRedo, onSave, isSaving, selectedNodeId, onNodeDelete, onNodeDuplicate, nodes, addAction, getPastePosition, onPasteFromClipboard, onCopyToClipboard, canvasView]);
+  }, [zoomIn, zoomOut, resetZoom, fitToContent, onUndo, onRedo, canUndo, canRedo, onSave, isSaving, selectedNodeId, onNodeDelete, onNodeDuplicate, nodes, addAction, getPastePosition, onPasteFromClipboard, onCopyToClipboard, canvasView, clearSelection, selectedNodeIds, tool, setTool]);
 
 
 
   // Handle mouse events for panning
   useEffect(() => {
+    /**
+     * Глобальный обработчик движения мыши при панорамировании.
+     * Пишет новое смещение синхронно в panRef и планирует единый RAF-flush
+     * (как зум), чтобы за кадр был ровно один ре-рендер вместо нескольких
+     * прямых setPan — это убирает мерцание холста при панорамировании мышью.
+     */
     const handleGlobalMouseMove = (e: MouseEvent) => {
       if (isPanning) {
         const deltaX = e.clientX - panStart.x;
         const deltaY = e.clientY - panStart.y;
 
-        setPan({
+        const newPan = {
           x: lastPanPosition.x + deltaX,
-          y: lastPanPosition.y + deltaY
-        });
+          y: lastPanPosition.y + deltaY,
+        };
+        panRef.current = newPan;
+        pendingUpdateRef.current = { pan: newPan, zoom: zoomRef.current };
+        scheduleStateFlush();
       }
     };
 
@@ -1255,7 +1449,32 @@ export function Canvas({
       document.removeEventListener('mouseup', handleGlobalMouseUp);
       document.removeEventListener('wheel', preventPageZoom);
     };
-  }, [isPanning, panStart, lastPanPosition]);
+  }, [isPanning, panStart, lastPanPosition, scheduleStateFlush]);
+
+  // Глобальные обработчики рисования рамки выделения (marquee)
+  useEffect(() => {
+    if (!marqueeRect) return;
+
+    /** Обновляет рамку по координатам относительно холста */
+    const handleMarqueeMove = (e: MouseEvent) => {
+      const rect = canvasRef.current?.getBoundingClientRect();
+      const x = rect ? e.clientX - rect.left : e.clientX;
+      const y = rect ? e.clientY - rect.top : e.clientY;
+      updateMarquee(x, y);
+    };
+
+    /** Завершает рамку и вычисляет попавшие узлы */
+    const handleMarqueeUp = () => {
+      finishMarquee({ nodes, nodeSizes, pan, zoom });
+    };
+
+    document.addEventListener('mousemove', handleMarqueeMove);
+    document.addEventListener('mouseup', handleMarqueeUp);
+    return () => {
+      document.removeEventListener('mousemove', handleMarqueeMove);
+      document.removeEventListener('mouseup', handleMarqueeUp);
+    };
+  }, [marqueeRect, nodes, nodeSizes, pan, zoom, updateMarquee, finishMarquee]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -1438,8 +1657,85 @@ export function Canvas({
     
     if (e.target === e.currentTarget) {
       onNodeSelect('');
+      // Клик по пустому холсту снимает мульти-выделение ТОЛЬКО в режиме курсора.
+      // В режиме рамки клик после рисования рамки не должен сбрасывать выделение
+      // (иначе из-за батчинга React выделение очищается сразу после установки).
+      if (tool === 'pointer' && selectedNodeIds.size > 0) {
+        clearSelection();
+      }
     }
-  }, [onNodeSelect, pan.x, pan.y, zoom]);
+  }, [onNodeSelect, pan.x, pan.y, zoom, clearSelection, selectedNodeIds, tool]);
+
+  /**
+   * Стабильный обработчик дублирования узла через контекстное меню.
+   * Вынесен из инлайна в CanvasContent, чтобы пропсы мемоизированных нод
+   * не менялись на каждый кадр зума и ноды не ре-рендерились.
+   */
+  const handleNodeDuplicateAtPosition = useCallback((nodeId: string) => {
+    onNodeDuplicate?.(nodeId, getPastePosition());
+  }, [onNodeDuplicate, getPastePosition]);
+
+  /** Стабильный обработчик начала перемещения узла (фиксирует draggingNodeId) */
+  const handleNodeMoveStart = useCallback((nodeId: string) => {
+    setDraggingNodeId(nodeId);
+    onNodeMoveStart?.(nodeId);
+  }, [onNodeMoveStart]);
+
+  /** Стабильный обработчик окончания перемещения узла (сбрасывает draggingNodeId) */
+  const handleNodeMoveEnd = useCallback((nodeId: string) => {
+    setDraggingNodeId(null);
+    onNodeMoveEnd?.(nodeId);
+  }, [onNodeMoveEnd]);
+
+  /**
+   * Стабильный обработчик Shift+клика по узлу.
+   * Добавляет или убирает узел из мульти-выделения через toggleNodeSelection.
+   */
+  const handleNodeShiftClick = useCallback((nodeId: string) => toggleNodeSelection(nodeId), [toggleNodeSelection]);
+
+  /**
+   * Групповое удаление всех выделенных рамкой узлов.
+   * Удаляет каждый узел через onNodeDelete и очищает выделение.
+   */
+  const handleGroupDelete = useCallback(() => {
+    if (selectedNodeIds.size === 0 || !onNodeDelete) return;
+    addAction('delete', `Удалено узлов: ${selectedNodeIds.size}`);
+    selectedNodeIds.forEach(id => onNodeDelete(id));
+    clearSelection();
+  }, [selectedNodeIds, onNodeDelete, addAction, clearSelection]);
+
+  /** Групповое копирование выделенных узлов в буфер обмена */
+  const handleGroupCopy = useCallback(() => {
+    if (selectedNodeIds.size === 0 || !onCopyToClipboard) return;
+    onCopyToClipboard(Array.from(selectedNodeIds));
+    addAction('duplicate', `Скопировано узлов в буфер: ${selectedNodeIds.size}`);
+  }, [selectedNodeIds, onCopyToClipboard, addAction]);
+
+  /** Групповое перемещение выделенных узлов в существующий лист */
+  const handleGroupMoveToSheet = useCallback((sheetId: string) => {
+    if (selectedNodeIds.size === 0) return;
+    moveNodesToSheet(Array.from(selectedNodeIds), sheetId);
+    addAction('sheet_switch', `Перемещено узлов в лист: ${selectedNodeIds.size}`);
+    clearSelection();
+  }, [selectedNodeIds, moveNodesToSheet, addAction, clearSelection]);
+
+  /** Групповой перенос выделенных узлов в другой проект (в новый лист) */
+  const handleGroupMoveToProject = useCallback((targetProjectId: number) => {
+    if (selectedNodeIds.size === 0) return;
+    moveNodesToProject(Array.from(selectedNodeIds), targetProjectId);
+    addAction('sheet_switch', `Перенесено узлов в проект: ${selectedNodeIds.size}`);
+    clearSelection();
+  }, [selectedNodeIds, moveNodesToProject, addAction, clearSelection]);
+
+  /** Групповое перемещение выделенных узлов в новый лист */
+  const handleGroupMoveToNewSheet = useCallback(() => {
+    if (selectedNodeIds.size === 0) return;
+    // Автоматическое имя нового листа (как при нажатии кнопки "+")
+    const name = generateNextSheetName(botData?.sheets ?? []);
+    moveNodesToNewSheet(Array.from(selectedNodeIds), name);
+    addAction('sheet_add', `Создан лист "${name}" с узлами: ${selectedNodeIds.size}`);
+    clearSelection();
+  }, [selectedNodeIds, moveNodesToNewSheet, addAction, clearSelection, botData]);
 
   return (
     <main className="w-full h-full relative overflow-hidden bg-gradient-to-br from-slate-50 via-gray-50 to-slate-100 dark:from-slate-950 dark:via-gray-950 dark:to-slate-900">
@@ -1450,13 +1746,8 @@ export function Canvas({
           ref={canvasRef}
           className="min-h-full relative canvas-grid-modern"
           style={{
-            backgroundImage: `
-              radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.15) 1px, transparent 0)
-            `,
-            backgroundSize: `${24 * zoom / 100}px ${24 * zoom / 100}px`,
-            backgroundPosition: `${pan.x}px ${pan.y}px`,
-            minHeight: '2000vh',
-            minWidth: '2000vw',
+            width: '100%',
+            height: '100%',
             cursor: isPanning ? 'grabbing' : 'grab',
             // Предотвращение масштабирования на сенсорных устройствах
             touchAction: 'none'
@@ -1468,31 +1759,47 @@ export function Canvas({
           onDragLeave={handleDragLeave}
           onClick={handleCanvasClick}
           onMouseDown={handleMouseDown}
-          onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
           onContextMenu={handleContextMenu}
         >
+          {/* Фон-сетка в отдельном слое, обрезанном по видимой области.
+              Сетка двигается через GPU-transform (translate по модулю шага),
+              а не через background-position — поэтому при панорамировании фон
+              НЕ перерисовывается (нет каскадной перерисовки нод) и не мерцает.
+              background-size меняется только при зуме, поэтому точки остаются
+              чёткими 1px, а внешний вид — прежним. */}
+          <div className="absolute inset-0 overflow-hidden pointer-events-none">
+            <div
+              className="absolute"
+              style={{
+                inset: '-60px',
+                backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(99, 102, 241, 0.15) 1px, transparent 0)',
+                backgroundSize: `${24 * zoom / 100}px ${24 * zoom / 100}px`,
+                transform: `translate(${pan.x % (24 * zoom / 100)}px, ${pan.y % (24 * zoom / 100)}px)`,
+                willChange: 'transform',
+              }}
+            />
+          </div>
+
           {/* Transformable Canvas Content */}
           <CanvasContent
             botData={botData}
             nodes={nodes}
             pan={pan}
             zoom={zoom}
+            zoomRef={zoomRef}
+            panRef={panRef}
+            disableTransition={!animateTransform}
             selectedNodeId={selectedNodeId}
+            selectedNodeIds={selectedNodeIds}
             onNodeSelect={onNodeSelect}
+            onShiftClick={handleNodeShiftClick}
             onNodeDelete={onNodeDelete}
             onNodeDuplicate={onNodeDuplicate}
-            onNodeDuplicateAtPosition={onNodeDuplicate ? (nodeId) => {
-              /**
-               * Дублирование через контекстное меню: позиция вычисляется через
-               * getPastePosition() — ту же функцию, что использует Ctrl+V.
-               * Это гарантирует одинаковое поведение обоих способов дублирования.
-               */
-              onNodeDuplicate(nodeId, getPastePosition());
-            } : undefined}
+            onNodeDuplicateAtPosition={onNodeDuplicate ? handleNodeDuplicateAtPosition : undefined}
             onNodeMove={onNodeMove}
-            onNodeMoveStart={(nodeId) => { setDraggingNodeId(nodeId); onNodeMoveStart?.(nodeId); }}
-            onNodeMoveEnd={(nodeId) => { setDraggingNodeId(null); onNodeMoveEnd?.(nodeId); }}
+            onNodeMoveStart={handleNodeMoveStart}
+            onNodeMoveEnd={handleNodeMoveEnd}
             setIsNodeBeingDragged={setIsNodeBeingDragged}
             onSizeChange={handleNodeSizeChange}
             nodeSizes={nodeSizes}
@@ -1506,6 +1813,10 @@ export function Canvas({
             highlightNodeId={highlightNodeId}
             projectId={projectId}
           />
+
+          {/* Слой рамки выделения (marquee) — координаты в screen-пространстве холста,
+              поэтому рендерится вне трансформируемого CanvasContent */}
+          <MarqueeOverlay rect={marqueeRect} />
           {nodes.length === 0 && (
             <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200/50 dark:border-slate-600/50 p-12 w-96 text-center transition-all duration-500 hover:scale-105">
               <div className="w-20 h-20 bg-gradient-to-br from-blue-500/10 via-purple-500/10 to-pink-500/10 dark:from-blue-400/20 dark:via-purple-400/20 dark:to-pink-400/20 rounded-3xl flex items-center justify-center mx-auto mb-8 border border-blue-200/50 dark:border-blue-600/30 transition-all duration-300 hover:scale-110 hover:shadow-lg hover:shadow-blue-500/20">
@@ -1556,6 +1867,30 @@ export function Canvas({
         handleUndoSelected={handleUndoSelected}
         canvasView={canvasView}
         onViewChange={onViewChange}
+        onNodeFocus={focusOnNode}
+        searchOpen={searchOpen}
+        onSearchOpenChange={setSearchOpen}
+        marqueeActive={tool === 'marquee'}
+        onToggleMarquee={toggleTool}
+      />
+
+      {/* Плавающая панель для мобильных устройств */}
+      <MobileCanvasFab
+        onOpenMobileSidebar={onOpenMobileSidebar}
+        onOpenMobileProperties={onOpenMobileProperties}
+        selectedNodeId={selectedNodeId}
+      />
+
+      {/* Плавающий бар групповых действий над выделенными рамкой узлами */}
+      <MultiSelectionToolbar
+        count={selectedNodeIds.size}
+        sheets={availableSheets}
+        projects={otherProjects}
+        onDelete={handleGroupDelete}
+        onCopy={handleGroupCopy}
+        onMoveToSheet={handleGroupMoveToSheet}
+        onMoveToNewSheet={handleGroupMoveToNewSheet}
+        onMoveToProject={handleGroupMoveToProject}
       />
 
       {/* Компонент листов холста - фиксированная панель внизу */}

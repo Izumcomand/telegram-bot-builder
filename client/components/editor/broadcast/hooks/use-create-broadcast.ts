@@ -47,10 +47,17 @@ export function useCreateBroadcast({
         audienceType === 'date' ? {
           registeredFrom: filterFields.registeredFrom,
           registeredTo: filterFields.registeredTo,
-        } : {
+        } :
+        audienceType === 'manual' ? { userIds: filterFields.userIds } : {
           activeFrom: filterFields.activeFrom,
           activeTo: filterFields.activeTo,
         };
+
+      // Добавляем groupIds если выбраны группы
+      const filtersWithGroups = {
+        ...filters,
+        ...(filterFields.groupIds?.length ? { groupIds: filterFields.groupIds } : {}),
+      };
 
       const url = tokenId
         ? `/api/projects/${projectId}/broadcasts?tokenId=${tokenId}`
@@ -60,7 +67,9 @@ export function useCreateBroadcast({
         name: formData.name,
         messageText: formData.messageText,
         mediaUrls: formData.mediaUrls ?? [],
-        filters,
+        buttons: formData.buttons ?? [],
+        buttonsPerRow: formData.buttonsPerRow ?? 0,
+        filters: filtersWithGroups,
       });
     },
     onSuccess: (data) => {

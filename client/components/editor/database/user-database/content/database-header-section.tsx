@@ -1,17 +1,19 @@
 /**
  * @fileoverview Компактная секция заголовка панели базы данных пользователей
- * @description Строка 1: заголовок + кнопка обновить. Строка 2: проект, бот, статус БД, удалить
+ * @description Строка с заголовком, инлайн-бейджами статистики и кнопками управления
  */
 
+import { Users, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { TabHeader } from '@/components/ui/tab-header';
 import { BotProject } from '@shared/schema';
 import {
   BotTokenSelector,
-  DatabaseHeader,
-  DatabaseToggle,
   HeaderActions,
   ProjectSelector,
 } from '../components/header';
 import { DatabaseContentProps } from './database-content-props';
+import { InlineStatsBadges } from '../components/header/inline-stats-badges';
 
 /**
  * Пропсы компонента DatabaseHeaderSection
@@ -30,13 +32,14 @@ interface DatabaseHeaderSectionProps
     | 'deleteAllUsersMutation'
     | 'allProjects'
     | 'onProjectChange'
+    | 'stats'
   > {
   /** Данные проекта */
   project: BotProject | null;
 }
 
 /**
- * Компактная секция заголовка панели БД
+ * Компактная секция заголовка панели БД — использует TabHeader
  * @param props - Пропсы компонента
  * @returns JSX компонент заголовка
  */
@@ -53,6 +56,7 @@ export function DatabaseHeaderSection(props: DatabaseHeaderSectionProps): React.
     deleteAllUsersMutation,
     allProjects,
     onProjectChange,
+    stats,
   } = props;
 
   /** Показывать селектор проекта только если передан список из более чем одного проекта */
@@ -60,55 +64,60 @@ export function DatabaseHeaderSection(props: DatabaseHeaderSectionProps): React.
     allProjects !== undefined && allProjects.length > 1 && onProjectChange !== undefined;
 
   return (
-    <div className="border-b border-border/50 bg-card w-full px-3 py-2 sm:px-4 sm:py-3">
-      {/* Строка 1: заголовок + кнопка обновить */}
-      <DatabaseHeader projectName={projectName} onRefresh={handleRefresh} />
-
-      <div className="mt-1 border-b border-border/40" />
-
-      {/* Строка 2: проект, бот, статус БД, удалить */}
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        {/* Селектор проекта — только если доступно несколько проектов */}
-        {showProjectSelector ? (
-          <ProjectSelector
-            projects={allProjects!}
-            selectedProjectId={projectId}
-            onSelect={onProjectChange!}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Проект: <span className="font-medium text-foreground">{projectName}</span>
-          </span>
-        )}
-
-        <span className="text-border/60 hidden sm:inline">·</span>
-
-        {/* Селектор бота */}
-        <BotTokenSelector
-          tokens={availableTokens}
-          selectedTokenId={selectedTokenId}
-          onSelect={onSelectToken}
+    <TabHeader
+      icon={<Users className="w-4 h-4 sm:w-5 sm:h-5 text-primary" />}
+      title="Пользователи"
+      actions={
+        handleRefresh ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleRefresh}
+            className="h-7 px-2 text-muted-foreground hover:text-foreground"
+            title="Обновить данные"
+          >
+            <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            <span className="text-xs hidden sm:inline">Обновить</span>
+          </Button>
+        ) : undefined
+      }
+    >
+      {/* Селектор проекта */}
+      {showProjectSelector && (
+        <ProjectSelector
+          projects={allProjects!}
+          selectedProjectId={projectId}
+          onSelect={onProjectChange!}
         />
+      )}
 
-        <span className="text-border/60 hidden sm:inline">·</span>
+      {/* Селектор бота */}
+      <BotTokenSelector
+        tokens={availableTokens}
+        selectedTokenId={selectedTokenId}
+        onSelect={onSelectToken}
+      />
 
-        {/* Переключатель БД — скрыт из UI (функционал сохранён) */}
-        {/* <DatabaseToggle
-          isDatabaseEnabled={isDatabaseEnabled}
-          onToggle={(checked) => toggleDatabaseMutation.mutate(checked)}
-          isPending={toggleDatabaseMutation.isPending}
-        /> */}
-
-        {/* Кнопка удалить — только когда БД включена */}
-        {isDatabaseEnabled && (
+      {/* Кнопка очистить */}
+      {isDatabaseEnabled && (
+        <>
+          <span className="text-border/60 text-[10px]">·</span>
           <HeaderActions
             projectId={projectId}
             projectName={projectName}
             onRefresh={handleRefresh}
             onDeleteAll={() => deleteAllUsersMutation.mutate()}
           />
-        )}
-      </div>
-    </div>
+        </>
+      )}
+
+      {/* Инлайн-бейджи статистики */}
+      {isDatabaseEnabled && stats && (
+        <>
+          <span className="text-border/60 text-[10px]">·</span>
+          <InlineStatsBadges stats={stats} />
+        </>
+      )}
+    </TabHeader>
   );
 }

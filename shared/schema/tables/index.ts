@@ -21,9 +21,6 @@ export type { BotTemplate, InsertBotTemplate } from "./bot-templates";
 export { mediaFiles, insertMediaFileSchema } from "./media-files";
 export type { MediaFile, InsertMediaFile } from "./media-files";
 
-export { userBotData, insertUserBotDataSchema } from "./user-bot-data";
-export type { UserBotData, InsertUserBotData } from "./user-bot-data";
-
 export { botUsers, insertBotUserSchema } from "./bot-users";
 export type { BotUser, InsertBotUser } from "./bot-users";
 
@@ -62,3 +59,6 @@ export type { AppSetting, InsertAppSetting } from "./app-settings";
 
 export { broadcasts, broadcastResults, insertBroadcastSchema, insertBroadcastResultSchema, broadcastFiltersSchema } from "./broadcasts";
 export type { Broadcast, InsertBroadcast, BroadcastResult, InsertBroadcastResult, BroadcastFilters } from "./broadcasts";
+
+export { botEnvVariables, insertBotEnvVariableSchema } from "./bot-env-variables";
+export type { BotEnvVariable, InsertBotEnvVariable } from "./bot-env-variables";

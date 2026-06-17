@@ -34,7 +34,7 @@
 |---|---|---|---|
 | `queryParams` | JSON string | — | Query параметры `[{key, value}]` |
 | `bodyFormat` | json/form-urlencoded/raw | `json` | Формат тела запроса |
-| `responseFormat` | autodetect/json/text/file | `autodetect` | Формат ответа. `file` — сохраняет ответ как base64-объект `{type, data, mimeType, fileName}` |
+| `responseFormat` | autodetect/json/text/file/xml | `autodetect` | Формат ответа. `file` — сохраняет ответ как base64-объект `{type, data, mimeType, fileName}`. `xml` — парсит XML в dict/list |
 | `ignoreHttpErrors` | boolean | `false` | Не падать при 4xx/5xx |
 | `ignoreSsl` | boolean | `false` | Игнорировать SSL сертификат |
 | `followRedirects` | boolean | `true` | Следовать редиректам |
@@ -134,6 +134,45 @@
 ```
 Используй медиа-ноду с `{export_file}` для отправки файла пользователю.
 
+### Получение XML (парсинг в dict)
+
+```json
+{
+  "url": "https://cryptobar.cc/request-exportnewxml.xml?lang=ru",
+  "method": "GET",
+  "responseFormat": "xml",
+  "responseVariable": "xml_rates",
+  "responseJsonPath": "item.0.in",
+  "responseExtractTo": "first_rate"
+}
+```
+
+XML-ответ автоматически конвертируется в dict/list:
+- Повторяющиеся теги (например `<item>`) становятся массивом
+- Одиночные теги разворачиваются в значение
+
+Пример XML:
+```xml
+<rates>
+  <item><from>CARDRUB</from><to>USDTTRC20</to><in>95.15</in></item>
+  <item><from>CARDRUB</from><to>BTC</to><in>7361848.17</in></item>
+</rates>
+```
+
+Результат парсинга:
+```json
+{
+  "item": [
+    {"from": "CARDRUB", "to": "USDTTRC20", "in": "95.15"},
+    {"from": "CARDRUB", "to": "BTC", "in": "7361848.17"}
+  ]
+}
+```
+
+После этого можно использовать `responseJsonPath: "item.0.in"` для извлечения курса.
+
+В режиме `autodetect` XML также распознаётся автоматически по Content-Type или по `<?xml` в начале ответа.
+
 ## Подстановка переменных
 
 Переменные в формате `{var_name}` подставляются в URL, заголовки, тело и query параметры из переменных пользователя.
@@ -164,3 +203,139 @@
 ## Обработка ошибок
 
 При ошибке сети `_response_data` будет `None`, `_status_code` — `0`. Ошибка логируется через `logging.error`. При `ignoreHttpErrors: true` ошибки 4xx/5xx не прерывают выполнение.
+
+## Извлечение по JSON-пути
+
+Опциональная функция для извлечения вложенного значения из JSON-ответа по dot-notation пути.
+
+### Параметры
+
+| Параметр | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `responseJsonPath` | string | — | Путь для извлечения (поддерживает `{переменные}`) |
+| `responseExtractTo` | string | — | Переменная куда сохранить извлечённое значение |
+
+### Пример — извлечение курса из API обменника
+
+```json
+{
+  "url": "https://swop.is/valuta.json",
+  "method": "GET",
+  "responseVariable": "r_exch",
+  "responseJsonPath": "exchange.2.to.55",
+  "responseExtractTo": "current_rate"
+}
+```
+
+После выполнения:
+- `r_exch` = весь JSON-ответ (как обычно)
+- `current_rate` = `"82.70"` (извлечённое значение)
+
+### Пример — динамический путь с переменными
+
+```json
+{
+  "url": "{exchanger.url}",
+  "method": "GET",
+  "responseVariable": "r_exch",
+  "responseJsonPath": "exchange.{exchanger.local_from}.to.{exchanger.local_to}.xr",
+  "responseExtractTo": "current_rate"
+}
+```
+
+Переменные в пути подставляются через `replace_variables_in_text` перед обходом объекта.
+
+### Поведение
+
+- Если путь не найден — переменная получает пустую строку `""`
+- Если `responseJsonPath` пустой — извлечение не выполняется (обратная совместимость)
+- Оба поля (`responseJsonPath` и `responseExtractTo`) должны быть заполнены для работы
+- Поддерживает числовые индексы массивов: `items.0.name`
+- Поддерживает фильтрацию массива: `items.?field=value&field2=value2.result`
+
+### Фильтрация массива
+
+Сегмент пути, начинающийся с `?`, ищет в массиве первый элемент, удовлетворяющий условиям:
+
+```
+item.?from=CARDRUB&to=USDTTRC20.in
+```
+
+Разбор:
+1. `item` — получить поле `item` (массив)
+2. `?from=CARDRUB&to=USDTTRC20` — найти элемент где `from == "CARDRUB"` И `to == "USDTTRC20"`
+3. `in` — взять поле `in` из найденного элемента
+
+### Пример — cryptobar.cc (XML → фильтрация)
+
+```json
+{
+  "url": "https://cryptobar.cc/request-exportnewxml.xml?lang=ru",
+  "method": "GET",
+  "responseFormat": "xml",
+  "responseVariable": "r_exch",
+  "responseJsonPath": "item.?from={cb_from}&to={cb_to}.in",
+  "responseExtractTo": "current_rate"
+}
+```
+
+XML парсится в dict, затем фильтрация находит нужную пару по `from`/`to` и извлекает курс из поля `in`.
+
+## Batch mode (параллельные запросы)
+
+Batch-режим позволяет одному узлу `http_request` выполнить параллельные HTTP-запросы по массиву данных через `asyncio.gather`. Это решает проблему race conditions, возникающих при параллельных циклах.
+
+### Параметры
+
+| Параметр | Тип | По умолчанию | Описание |
+|---|---|---|---|
+| `enableBatch` | boolean | `false` | Включить batch-режим |
+| `batchSource` | string | — | Переменная-источник с массивом (например `table.exchangers`) |
+| `batchItemVar` | string | `item` | Имя переменной элемента массива |
+| `batchResultVariable` | string | — | Переменная для сохранения массива результатов |
+| `batchResultFields` | array | `[]` | Поля результата `[{key, value}]`. Значение `__extracted__` — результат JSON path извлечения |
+
+### Как работает
+
+1. Загружает массив из переменной `batchSource`
+2. Для каждого элемента массива подготавливает локальные переменные (`item.field`)
+3. Выполняет HTTP-запрос с подстановкой переменных из локального контекста
+4. Извлекает значение по `responseJsonPath` (если задан)
+5. Формирует объект результата из `batchResultFields`
+6. Все запросы выполняются параллельно через `asyncio.gather`
+7. Массив результатов сохраняется в `batchResultVariable`
+8. Обычная логика одиночного запроса пропускается
+
+### Пример — параллельный опрос обменников
+
+```json
+{
+  "url": "{item.url}",
+  "method": "GET",
+  "responseJsonPath": "exchange.{item.local_from}.to.{item.local_to}.xr",
+  "enableBatch": true,
+  "batchSource": "table.exchangers",
+  "batchItemVar": "item",
+  "batchResultVariable": "batch_rates",
+  "batchResultFields": [
+    {"key": "name", "value": "{item.name}"},
+    {"key": "rate", "value": "__extracted__"}
+  ]
+}
+```
+
+Если `table.exchangers` содержит:
+```json
+[
+  {"name": "Exchange A", "url": "https://a.com/api", "local_from": "RUB", "local_to": "USDT"},
+  {"name": "Exchange B", "url": "https://b.com/api", "local_from": "RUB", "local_to": "USDT"}
+]
+```
+
+Результат в `batch_rates`:
+```json
+[
+  {"name": "Exchange A", "rate": "92.50"},
+  {"name": "Exchange B", "rate": "93.10"}
+]
+```

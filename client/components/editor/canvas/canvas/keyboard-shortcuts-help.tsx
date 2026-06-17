@@ -41,6 +41,10 @@ export function KeyboardShortcutsHelp() {
                 <span className="text-gray-600 dark:text-gray-400">Уместить всё:</span>
                 <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Ctrl + 1</code>
               </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Авто-уместить (A):</span>
+                <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Ctrl + 2</code>
+              </div>
             </div>
           </div>
 
@@ -93,6 +97,10 @@ export function KeyboardShortcutsHelp() {
               <div className="flex justify-between">
                 <span className="text-gray-600 dark:text-gray-400">Панорамирование:</span>
                 <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Alt + ЛКМ</code>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-600 dark:text-gray-400">Поиск узлов:</span>
+                <code className="bg-gray-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">Ctrl + F</code>
               </div>
             </div>
           </div>

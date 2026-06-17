@@ -263,6 +263,15 @@ export function hasEditMessageNodes(nodes: Node[]): boolean {
 }
 
 /**
+ * Проверяет наличие узлов delete_message в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа delete_message
+ */
+export function hasDeleteMessageNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'delete_message');
+}
+
+/**
  * Проверяет наличие узлов psql_query в массиве узлов
  * @param nodes - Массив узлов для проверки
  * @returns true если есть хотя бы один узел типа psql_query
@@ -278,4 +287,78 @@ export function hasPsqlQueryNodes(nodes: Node[]): boolean {
  */
 export function hasConvertFileNodes(nodes: Node[]): boolean {
   return nodes.filter(n => n != null).some(node => (node.type as string) === 'convert_file');
+}
+
+/**
+ * Проверяет наличие узлов loop в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа loop
+ */
+export function hasLoopNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'loop');
+}
+
+/**
+ * Проверяет наличие узлов schedule_trigger в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа schedule_trigger
+ */
+export function hasScheduleTriggerNodes(nodes: Node[]): boolean {
+  if (!nodes || nodes.length === 0) return false;
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'schedule_trigger');
+}
+
+/**
+ * Проверяет наличие узлов bot_table в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа bot_table
+ */
+export function hasBotTableNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'bot_table');
+}
+
+/**
+ * Проверяет наличие узлов delay в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа delay
+ */
+export function hasDelayNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'delay');
+}
+
+/**
+ * Проверяет наличие узлов parallel_split в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа parallel_split
+ */
+export function hasParallelSplitNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'parallel_split');
+}
+
+/**
+ * Проверяет наличие узлов userbot_message
+ * @param nodes - Массив узлов
+ * @returns true если есть хотя бы один userbot_message
+ */
+export function hasUserbotMessageNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'userbot_message');
+}
+
+/**
+ * Проверяет наличие узлов userbot_edit_trigger
+ * @param nodes - Массив узлов
+ * @returns true если есть хотя бы один userbot_edit_trigger
+ */
+export function hasUserbotEditTriggerNodes(nodes: Node[]): boolean {
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'userbot_edit_trigger');
+}
+
+/**
+ * Проверяет наличие узлов kick_user в массиве узлов
+ * @param nodes - Массив узлов для проверки
+ * @returns true если есть хотя бы один узел типа kick_user
+ */
+export function hasKickUserNodes(nodes: Node[]): boolean {
+  if (!nodes || nodes.length === 0) return false;
+  return nodes.filter(n => n != null).some(node => (node.type as string) === 'kick_user');
 }

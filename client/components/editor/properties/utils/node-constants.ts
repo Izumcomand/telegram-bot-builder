@@ -42,6 +42,13 @@ export const MANAGEMENT_NODE_TYPES = [
   'set_variable' as any,
   'psql_query' as any,
   'convert_file' as any,
+  'loop' as any,
+  'bot_table' as any,
+  'delay' as any,
+  'userbot_message' as any,
+  'userbot_click_button' as any,
+  'userbot_inline_query' as any,
+  'parallel_split' as any,
 ] as const;
 
 /**
@@ -71,6 +78,8 @@ export const TRIGGER_NODE_TYPES = [
   'incoming_callback_trigger' as any,
   'outgoing_message_trigger' as any,
   'managed_bot_updated_trigger' as any,
+  'schedule_trigger' as any,
+  'userbot_edit_trigger' as any,
 ] as const;
 
 /**

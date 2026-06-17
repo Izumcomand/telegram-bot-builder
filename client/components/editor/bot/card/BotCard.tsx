@@ -18,6 +18,10 @@ import { Separator } from '@/components/ui/separator';
 import { BotCardHeader } from './BotCardHeader';
 import { BotCardInfo } from './BotCardInfo';
 import { BotSettingsGrid } from './BotSettingsGrid';
+import { BotCardViewToggle, type BotCardViewMode } from './BotCardViewToggle';
+import { BotEnvPanel } from './BotEnvPanel';
+import { BotEnvStagingBar } from './BotEnvStagingBar';
+import { useEnvPendingChanges } from './use-env-pending-changes';
 import { useBotControl } from '../bot-control-context';
 import { useTelegramAuth } from '@/components/editor/header/hooks/use-telegram-auth';
 import type { BotProject, BotToken } from '@shared/schema';
@@ -60,6 +64,12 @@ export function BotCard({
 
   /** Свёрнута ли карточка */
   const [isCollapsed, setIsCollapsed] = useState<boolean>(defaultCollapsed);
+
+  /** Режим отображения: настройки или переменные */
+  const [viewMode, setViewMode] = useState<BotCardViewMode>('settings');
+
+  /** Общий pending state для переменных окружения (виден в обоих режимах) */
+  const pending = useEnvPendingChanges(project.id, token.id);
 
   // Синхронизируем с внешним состоянием при его изменении (кнопка "Свернуть все")
   useEffect(() => {
@@ -110,19 +120,40 @@ export function BotCard({
             handleCancelEdit={handleCancelEdit} handleStartEdit={handleStartEdit}
             queryClient={queryClient}
           />
-          <BotSettingsGrid
-            projectId={project.id} tokenId={token.id}
-            botName={token.name ?? `Бот ${token.id}`}
-            userDatabaseEnabled={project.userDatabaseEnabled}
-            isBotRunning={isThisTokenRunning}
-            currentElapsedSeconds={currentElapsedSeconds}
-            allBotStatuses={allBotStatuses} token={token}
-            toggleDatabaseMutation={toggleDatabaseMutation}
-            launchMode={token.launchMode ?? 'polling'}
-            webhookBaseUrl={token.webhookBaseUrl ?? null}
-            webhookSecretToken={token.webhookSecretToken ?? null}
-            canManage={canManage}
-          />
+          <BotCardViewToggle mode={viewMode} onModeChange={setViewMode} />
+          {pending.changesCount > 0 && (
+            <BotEnvStagingBar
+              changesCount={pending.changesCount}
+              isSaving={pending.isSaving}
+              onDiscard={pending.discardAll}
+              onSave={pending.saveAll}
+              onSaveAndRestart={pending.saveAndRestart}
+            />
+          )}
+          {viewMode === 'settings' ? (
+            <BotSettingsGrid
+              projectId={project.id} tokenId={token.id}
+              botName={token.name ?? `Бот ${token.id}`}
+              userDatabaseEnabled={project.userDatabaseEnabled}
+              isBotRunning={isThisTokenRunning}
+              currentElapsedSeconds={currentElapsedSeconds}
+              allBotStatuses={allBotStatuses} token={token}
+              toggleDatabaseMutation={toggleDatabaseMutation}
+              launchMode={token.launchMode ?? 'polling'}
+              webhookBaseUrl={token.webhookBaseUrl ?? null}
+              webhookSecretToken={token.webhookSecretToken ?? null}
+              canManage={canManage}
+              onPendingChange={(key, value) => pending.addChange({ action: 'update', type: 'system', key, value })}
+            />
+          ) : (
+            <BotEnvPanel
+              projectId={project.id}
+              tokenId={token.id}
+              token={token}
+              adminIds={project.adminIds || ''}
+              pending={pending}
+            />
+          )}
         </div>
       </CardContent>
     </Card>

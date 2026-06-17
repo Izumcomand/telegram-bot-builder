@@ -117,13 +117,7 @@ export function AdaptiveHeader({
           )}
 
           <Separator />
-          {/* Мобильные кнопки компонентов и свойств после разделителя */}
-          {isMobile && !isVertical && (
-            <MobileHeaderControls
-              onOpenMobileSidebar={onOpenMobileSidebar}
-              onOpenMobileProperties={onOpenMobileProperties}
-            />
-          )}
+          {/* Мобильные кнопки перенесены на FAB канваса — см. mobile-canvas-fab.tsx */}
         </div>
 
         <div className="flex items-center gap-1 lg:gap-2 flex-1">
@@ -159,8 +153,8 @@ export function AdaptiveHeader({
           />
         </div>
 
-        {/* Мобильная кнопка меню */}
-        <div className="lg:hidden">
+        {/* Мобильная кнопка меню — скрыта, функционал перенесён на FAB и навигацию */}
+        {/* <div className="lg:hidden">
           <MobileMenu
             currentTab={currentTab}
             onTabChange={onTabChange}
@@ -184,7 +178,7 @@ export function AdaptiveHeader({
             onLogout={logout}
             onLogin={handleTelegramLogin}
           />
-        </div>
+        </div> */}
       </header>
     </>
   );

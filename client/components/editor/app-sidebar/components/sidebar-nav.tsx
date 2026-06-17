@@ -2,7 +2,7 @@
  * @fileoverview Вертикальная навигация по вкладкам сайдбара
  */
 
-import { LayoutDashboard, Code2, Bot, Users, Megaphone, BarChart2 } from 'lucide-react';
+import { LayoutDashboard, Code2, Bot, Users, Megaphone, BarChart2, MessageSquare, Table2, Terminal, FileImage } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/utils/utils';
 import type { HeaderTab } from '../types';
@@ -34,11 +34,15 @@ interface NavItem {
 /** Список активных пунктов навигации */
 const NAV_ITEMS: NavItem[] = [
   { tab: 'editor',    label: 'Редактор',   icon: LayoutDashboard },
-  { tab: 'export',    label: 'Код',        icon: Code2 },
   { tab: 'bot',       label: 'Бот',        icon: Bot },
+  { tab: 'terminal', label: 'Терминал',  icon: Terminal },
   { tab: 'users',     label: 'Пользователи', icon: Users },
+  { tab: 'dialogs',   label: 'Диалоги',    icon: MessageSquare },
   { tab: 'broadcast', label: 'Рассылки',   icon: Megaphone },
   { tab: 'analytics', label: 'Аналитика',  icon: BarChart2 },
+  { tab: 'tables',    label: 'Таблицы',    icon: Table2 },
+  { tab: 'files',     label: 'Файлы',      icon: FileImage },
+  { tab: 'export',    label: 'Код',        icon: Code2 },
 ];
 
 /**
@@ -65,7 +69,7 @@ export function SidebarNav({ currentTab, onTabChange, isCollapsed }: SidebarNavP
             )}
           >
             <Icon className="h-4 w-4 flex-shrink-0" />
-            {!isCollapsed && <span className="text-sm">{label}</span>}
+            {!isCollapsed && <span className="text-sm whitespace-nowrap">{label}</span>}
           </Button>
         );
       })}

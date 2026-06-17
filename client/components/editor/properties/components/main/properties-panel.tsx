@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview Панель свойств узлов редактора с нижней секцией linked-input для message.
  */
 
@@ -13,6 +13,7 @@ import { getNodeDefaults } from '../../utils/node-defaults';
 import { collectAllNodesFromSheets } from '../../utils/node-utils';
 import { extractVariables } from '../../utils/variables-utils';
 import { useMediaVariables } from '../../hooks/use-media-variables';
+import { useBotTablesForVariables } from '../../hooks/use-bot-tables-for-variables';
 import { useNodeCommandValidation } from '../../hooks/use-node-command-validation';
 import { formatNodeDisplay } from '../../utils/node-formatters';
 import { isManagementNode, isTriggerNode, isConditionNode } from '../../utils/node-constants';
@@ -27,7 +28,9 @@ import { CallbackTriggerConfiguration } from '../trigger/CallbackTriggerConfigur
 import { IncomingCallbackTriggerConfiguration } from '../trigger/IncomingCallbackTriggerConfiguration';
 import { OutgoingMessageTriggerConfiguration } from '../trigger/OutgoingMessageTriggerConfiguration';
 import { ManagedBotUpdatedTriggerConfiguration } from '../trigger/ManagedBotUpdatedTriggerConfiguration';
+import { ScheduleTriggerConfiguration } from '../trigger/ScheduleTriggerConfiguration';
 import { ConditionNodeConfiguration } from '../condition/ConditionNodeConfiguration';
+import { ParallelSplitConfiguration } from '../parallel-split/ParallelSplitConfiguration';
 import { PropertiesFooterWrapper } from './properties-footer-wrapper';
 import { PropertiesHeader } from '../layout/properties-header';
 import { SectionHeader } from '../layout/section-header';
@@ -63,10 +66,21 @@ import { HttpRequestConfiguration } from '../configuration/http-request-configur
 import { GetManagedBotTokenConfiguration } from '../configuration/get-managed-bot-token-configuration';
 import { AnswerCallbackQueryConfiguration } from '../action/AnswerCallbackQueryConfiguration';
 import { EditMessageConfiguration } from '../action/EditMessageConfiguration';
+import { DeleteMessageConfiguration } from '../action/DeleteMessageConfiguration';
+import { KickUserConfiguration } from '../action/KickUserConfiguration';
 import { SetVariableConfiguration } from '../configuration/set-variable-configuration';
 import { PsqlQueryConfiguration } from '../configuration/psql-query-configuration';
 import { ConvertFileConfiguration } from '../configuration/ConvertFileConfiguration';
+import { BotTableConfiguration } from '../configuration/BotTableConfiguration';
+import { LoopConfiguration } from '../configuration/LoopConfiguration';
+import { DelayConfiguration } from '../configuration/delay-configuration';
+import { UserbotMessageConfiguration } from '../userbot/UserbotMessageConfiguration';
+import { UserbotClickButtonConfiguration } from '../userbot/UserbotClickButtonConfiguration';
+import { UserbotInlineQueryConfiguration } from '../userbot/UserbotInlineQueryConfiguration';
+import { UserbotEditTriggerConfiguration } from '../trigger/UserbotEditTriggerConfiguration';
 import type { Variable } from '../../../inline-rich/types';
+import { useEnvVariablesForNode } from '../../hooks/use-env-variables-for-node';
+import { PropertyCheckbox } from '../common/property-checkbox';
 
 /**
  * РРЅС‚РµСЂС„РµР№СЃ РїСЂРѕРїСЃРѕРІ РґР»СЏ РїР°РЅРµР»Рё СЃРІРѕР№СЃС‚РІ СѓР·Р»РѕРІ
@@ -163,6 +177,12 @@ export function PropertiesPanel({
   const lastUserInputNodeIdRef = useRef<string | null>(selectedNode?.id || null);
   const wasUserInputPresentRef = useRef(false);
 
+  /** Env-переменные бота для селектора подключения к БД */
+  const envVariablesForNode = useEnvVariablesForNode(projectId);
+
+  /** Таблицы проекта для переменных формата {table.имя.колонка} */
+  const botTables = useBotTablesForVariables(projectId);
+
   // РЎРёРЅС…СЂРѕРЅРёР·РёСЂСѓРµРј displayNodeId СЃ selectedNode.id РїСЂРё РёР·РјРµРЅРµРЅРёРё СѓР·Р»Р°
   useEffect(() => {
     if (selectedNode?.id) {
@@ -246,7 +266,7 @@ export function PropertiesPanel({
   /**
    * РњРµРјРѕРёР·РёСЂРѕРІР°РЅРЅС‹Рµ С‚РµРєСЃС‚РѕРІС‹Рµ Рё РјРµРґРёР° РїРµСЂРµРјРµРЅРЅС‹Рµ
    */
-  const { textVariables, mediaVariables } = useMemo(() => extractVariables(allNodes), [allNodes]);
+  const { textVariables, mediaVariables } = useMemo(() => extractVariables(allNodes, botTables), [allNodes, botTables]);
 
   /**
    * РҐСѓРє РґР»СЏ СѓРїСЂР°РІР»РµРЅРёСЏ РјРµРґРёР°РїРµСЂРµРјРµРЅРЅС‹РјРё
@@ -354,11 +374,6 @@ export function PropertiesPanel({
 
   return (
     <aside className="w-full h-full bg-background border-l border-border flex flex-col shadow-lg md:shadow-none overflow-hidden">
-      {/* Mobile Close Button */}
-      <div className="md:hidden flex items-center justify-between p-3 border-b border-border bg-muted/50 sticky top-0 z-10">
-        <h3 className="font-semibold text-sm">РќР°СЃС‚СЂРѕР№РєРё СЌР»РµРјРµРЅС‚Р°</h3>
-      </div>
-
       {/* Properties Header */}
       <PropertiesHeader
         selectedNode={selectedNode}
@@ -372,7 +387,7 @@ export function PropertiesPanel({
         <div className="space-y-0">
 
           {/* Basic Settings Section - СЃРєСЂС‹С‚Рѕ РґР»СЏ СѓР·Р»Р° СЂР°СЃСЃС‹Р»РєР°, client_auth, С‚СЂРёРіРіРµСЂРѕРІ, СѓСЃР»РѕРІРёСЏ Рё РјРµРґРёР°-РЅРѕРґС‹ */}
-          {selectedNode.type !== 'broadcast' && selectedNode.type !== 'client_auth' && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'set_variable' && (selectedNode.type as any) !== 'psql_query' && (selectedNode.type as any) !== 'convert_file' && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && (
+          {selectedNode.type !== 'broadcast' && selectedNode.type !== 'client_auth' && selectedNode.type !== 'media' && (selectedNode.type as any) !== 'http_request' && (selectedNode.type as any) !== 'get_managed_bot_token' && (selectedNode.type as any) !== 'answer_callback_query' && (selectedNode.type as any) !== 'edit_message' && (selectedNode.type as any) !== 'delete_message' && (selectedNode.type as any) !== 'kick_user' && (selectedNode.type as any) !== 'set_variable' && (selectedNode.type as any) !== 'psql_query' && (selectedNode.type as any) !== 'convert_file' && (selectedNode.type as any) !== 'loop' && (selectedNode.type as any) !== 'bot_table' && (selectedNode.type as any) !== 'delay' && (selectedNode.type as any) !== 'userbot_message' && (selectedNode.type as any) !== 'userbot_click_button' && (selectedNode.type as any) !== 'userbot_inline_query' && (selectedNode.type as any) !== 'parallel_split' && !isTriggerNode(selectedNode.type) && !isConditionNode(selectedNode.type) && (
             <BasicSettingsSection
               selectedNode={selectedNode}
               projectId={projectId}
@@ -555,6 +570,24 @@ export function PropertiesPanel({
             />
           )}
 
+          {/* Delete Message Section */}
+          {(selectedNode.type as any) === 'delete_message' && (
+            <DeleteMessageConfiguration
+              selectedNode={selectedNode}
+              onNodeUpdate={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+            />
+          )}
+
+          {/* Kick User Section */}
+          {(selectedNode.type as any) === 'kick_user' && (
+            <KickUserConfiguration
+              selectedNode={selectedNode}
+              onNodeUpdate={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+            />
+          )}
+
           {/* Set Variable Section */}
           {(selectedNode.type as any) === 'set_variable' && (
             <SetVariableConfiguration
@@ -566,6 +599,11 @@ export function PropertiesPanel({
             />
           )}
 
+          {/* Delay Section */}
+          {(selectedNode.type as any) === 'delay' && (
+            <DelayConfiguration selectedNode={selectedNode} onNodeUpdate={onNodeUpdate} textVariables={textVariables as Variable[]} />
+          )}
+
           {/* SQL Query Section */}
           {(selectedNode.type as any) === 'psql_query' && (
             <div className="w-full bg-gradient-to-br from-violet-50/40 to-purple-50/20 dark:from-violet-950/30 dark:to-purple-900/20 rounded-xl p-3 sm:p-4 md:p-5 border border-violet-200/40 dark:border-violet-800/40 backdrop-blur-sm">
@@ -575,6 +613,7 @@ export function PropertiesPanel({
                 getAllNodesFromAllSheets={getAllNodesFromAllSheets}
                 formatNodeDisplay={formatNodeDisplay}
                 textVariables={textVariables as Variable[]}
+                envVariables={envVariablesForNode}
               />
             </div>
           )}
@@ -590,6 +629,60 @@ export function PropertiesPanel({
                 textVariables={textVariables as Variable[]}
               />
             </div>
+          )}
+
+          {/* Loop Section */}
+          {(selectedNode.type as any) === 'loop' && (
+            <LoopConfiguration
+              selectedNode={selectedNode}
+              onNodeUpdate={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+            />
+          )}
+
+          {/* Bot Table Section */}
+          {(selectedNode.type as any) === 'bot_table' && (
+            <div className="w-full bg-gradient-to-br from-amber-50/40 to-yellow-50/20 dark:from-amber-950/30 dark:to-yellow-900/20 rounded-xl p-3 sm:p-4 md:p-5 border border-amber-200/40 dark:border-amber-800/40 backdrop-blur-sm">
+              <BotTableConfiguration
+                selectedNode={selectedNode}
+                projectId={projectId}
+                onNodeUpdate={onNodeUpdate}
+                getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+                formatNodeDisplay={formatNodeDisplay}
+                textVariables={textVariables as Variable[]}
+              />
+            </div>
+          )}
+
+          {/* Userbot Message Section */}
+          {(selectedNode.type as any) === 'userbot_message' && (
+            <UserbotMessageConfiguration
+              selectedNode={selectedNode}
+              allNodes={allNodes}
+              availableVariables={textVariables}
+              projectId={projectId}
+              onNodeUpdate={onNodeUpdate}
+            />
+          )}
+
+          {/* Userbot Click Button Section */}
+          {(selectedNode.type as any) === 'userbot_click_button' && (
+            <UserbotClickButtonConfiguration
+              selectedNode={selectedNode}
+              allNodes={allNodes}
+              availableVariables={textVariables}
+              onNodeUpdate={onNodeUpdate}
+            />
+          )}
+
+          {/* Userbot Inline Query Section */}
+          {(selectedNode.type as any) === 'userbot_inline_query' && (
+            <UserbotInlineQueryConfiguration
+              selectedNode={selectedNode}
+              allNodes={allNodes}
+              availableVariables={textVariables}
+              onNodeUpdate={onNodeUpdate}
+            />
           )}
 
           {/* Trigger Section - С‚РѕР»СЊРєРѕ РґР»СЏ СѓР·Р»РѕРІ-С‚СЂРёРіРіРµСЂРѕРІ */}
@@ -651,6 +744,22 @@ export function PropertiesPanel({
               formatNodeDisplay={formatNodeDisplay}
             />
           )}
+          {isTriggerNode(selectedNode.type) && (selectedNode.type as any) === 'schedule_trigger' && (
+            <ScheduleTriggerConfiguration
+              selectedNode={selectedNode}
+              onUpdateNode={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+              formatNodeDisplay={formatNodeDisplay}
+            />
+          )}
+          {isTriggerNode(selectedNode.type) && (selectedNode.type as any) === 'userbot_edit_trigger' && (
+            <UserbotEditTriggerConfiguration
+              selectedNode={selectedNode}
+              onNodeUpdate={onNodeUpdate}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
+              formatNodeDisplay={formatNodeDisplay}
+            />
+          )}
 
           {/* Condition Section вЂ” С‚РѕР»СЊРєРѕ РґР»СЏ СѓР·Р»Р° СѓСЃР»РѕРІРёСЏ */}
           {isConditionNode(selectedNode.type) && (
@@ -659,6 +768,15 @@ export function PropertiesPanel({
               allNodes={allNodes}
               getAllNodesFromAllSheets={getAllNodesFromAllSheets}
               textVariables={textVariables as Variable[]}
+              onNodeUpdate={onNodeUpdate}
+            />
+          )}
+
+          {/* Parallel Split Section — только для узла параллельного запуска */}
+          {(selectedNode.type as any) === 'parallel_split' && (
+            <ParallelSplitConfiguration
+              selectedNode={selectedNode}
+              getAllNodesFromAllSheets={getAllNodesFromAllSheets}
               onNodeUpdate={onNodeUpdate}
             />
           )}
@@ -732,6 +850,16 @@ export function PropertiesPanel({
                           onNodeUpdate={onNodeUpdate}
                         />
                       </div>
+
+                      {/* Перемешивание кнопок — только для inline с >1 кнопкой */}
+                      {selectedNode.data.keyboardType === 'inline' && (selectedNode.data.buttons?.length ?? 0) > 1 && (
+                        <PropertyCheckbox
+                          id="shuffleButtonsLegacy"
+                          label="🔀 Перемешивать кнопки при каждом показе"
+                          checked={selectedNode.data.shuffleButtons || false}
+                          onChange={(checked) => onNodeUpdate(selectedNode.id, { shuffleButtons: checked })}
+                        />
+                      )}
 
                       {/* РљРЅРѕРїРєРё РґРѕР±Р°РІР»РµРЅРёСЏ */}
                       <KeyboardButtonsSection

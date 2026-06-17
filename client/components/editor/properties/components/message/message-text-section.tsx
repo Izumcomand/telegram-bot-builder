@@ -10,6 +10,8 @@ import { MessageTextSectionContent } from './message-text-section-content';
 import { MessageRecipientSection } from './message-recipient-section';
 import { SaveMessageIdSection } from './save-message-id-section';
 import { BroadcastToggle } from '../broadcast/broadcast-toggle';
+import { ContentSyncBadge } from '../content-sync-badge';
+import { PropertyCheckbox } from '../common/property-checkbox';
 import type { ProjectVariable } from '../../utils/variables-utils';
 import type { Variable } from '../../../inline-rich/types';
 import type { Node } from '@shared/schema';
@@ -79,6 +81,7 @@ export function MessageTextSection({
               onNodeUpdate(selectedNode.id, { variableFilters: filters });
             }}
           />
+          <ContentSyncBadge />
           <MessageRecipientSection
             selectedNode={selectedNode}
             onNodeUpdate={onNodeUpdate}
@@ -88,6 +91,13 @@ export function MessageTextSection({
             selectedNode={selectedNode}
             onNodeUpdate={onNodeUpdate}
             textVariables={[...textVariables, ...mediaVariables] as Variable[]}
+          />
+          {/* Переключатель превью ссылок */}
+          <PropertyCheckbox
+            id="disableLinkPreview"
+            label="Отключить превью ссылок"
+            checked={!!selectedNode.data.disableLinkPreview}
+            onChange={(checked) => onNodeUpdate(selectedNode.id, { disableLinkPreview: checked })}
           />
         </>
       )}

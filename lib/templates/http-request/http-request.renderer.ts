@@ -60,7 +60,7 @@ export function nodeToHttpRequestParams(node: Node, context?: HttpRequestNodeCon
     authQueryValue: data?.httpRequestAuthQueryValue || '',
     queryParams: data?.httpRequestQueryParams || '',
     bodyFormat: data?.httpRequestBodyFormat || 'json',
-    responseFormat: data?.httpRequestResponseFormat || 'autodetect',
+    responseFormat: data?.httpRequestResponseFormat || (typeof data?.httpRequestUrl === 'string' && data.httpRequestUrl.includes('.xml') ? 'xml' : 'autodetect'),
     ignoreHttpErrors: !!data?.httpRequestIgnoreHttpErrors,
     ignoreSsl: !!data?.httpRequestIgnoreSsl,
     followRedirects: data?.httpRequestFollowRedirects !== false,
@@ -71,6 +71,13 @@ export function nodeToHttpRequestParams(node: Node, context?: HttpRequestNodeCon
     paginationItemsField: typeof data?.httpRequestPaginationItemsField === 'string' ? data.httpRequestPaginationItemsField : 'items',
     paginationLimit: typeof data?.httpRequestPaginationLimit === 'number' ? data.httpRequestPaginationLimit : 10,
     paginationMaxPages: typeof data?.httpRequestPaginationMaxPages === 'number' ? data.httpRequestPaginationMaxPages : 20,
+    responseJsonPath: typeof data?.httpRequestResponseJsonPath === 'string' ? data.httpRequestResponseJsonPath : '',
+    responseExtractTo: typeof data?.httpRequestResponseExtractTo === 'string' ? data.httpRequestResponseExtractTo : '',
+    enableBatch: !!data?.httpRequestBatchEnabled,
+    batchSource: typeof data?.httpRequestBatchSource === 'string' ? data.httpRequestBatchSource : '',
+    batchItemVar: typeof data?.httpRequestBatchItemVar === 'string' ? data.httpRequestBatchItemVar : 'item',
+    batchResultVariable: typeof data?.httpRequestBatchResultVariable === 'string' ? data.httpRequestBatchResultVariable : '',
+    batchResultFields: Array.isArray(data?.httpRequestBatchResultFields) ? data.httpRequestBatchResultFields : [],
   };
 }
 

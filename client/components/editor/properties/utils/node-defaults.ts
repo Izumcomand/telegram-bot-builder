@@ -146,11 +146,14 @@ export function getNodeDefaults(type: Node['type']): any {
       variableName: ''
     },
     delete_message: {
-      command: '/delete_message',
-      synonyms: ['удалить', 'стереть', 'убрать сообщение'],
-      targetMessageId: '',
-      messageIdSource: 'last_message',
-      variableName: ''
+      messageIdSource: 'current_message',
+      messageIdManual: '',
+      lastNCount: '',
+      chatIdSource: 'current_chat',
+      chatIdManual: '',
+      ignoreErrors: true,
+      bulkDelete: false,
+      bulkMessageIdsVariable: '',
     },
     forward_message: {
       command: '',
@@ -206,12 +209,12 @@ export function getNodeDefaults(type: Node['type']): any {
       userVariableName: ''
     },
     kick_user: {
-      command: '/kick_user',
-      synonyms: ['кикнуть', 'исключить', 'выгнать'],
-      reason: 'Нарушение правил группы',
-      targetUserId: '',
-      userIdSource: 'last_message',
-      userVariableName: ''
+      userIdSource: 'current_user',
+      userIdManual: '',
+      userVariableName: '',
+      chatIdSource: 'current_chat',
+      chatIdManual: '',
+      ignoreErrors: true,
     },
     promote_user: {
       command: '/promote_user',
@@ -347,6 +350,14 @@ export function getNodeDefaults(type: Node['type']): any {
       filterByUserId: '',
       autoTransitionTo: '',
     },
+    schedule_trigger: {
+      rules: [{ mode: 'interval', intervalMinutes: 5 }],
+      timezone: 'Europe/Moscow',
+      autoTransitionTo: '',
+      runOnStart: false,
+      enabled: true,
+      maxConcurrent: 1,
+    },
     get_managed_bot_token: {
       botIdSource: 'variable',
       botIdVariable: 'bot_id',
@@ -402,6 +413,119 @@ export function getNodeDefaults(type: Node['type']): any {
       autoTransitionTo: '',
       /** Включить автопереход */
       enableAutoTransition: false,
+      /** Источник подключения к БД */
+      connectionSource: 'builtin',
+      /** Переменная окружения бота для подключения */
+      connectionEnvVar: '',
+      /** Connection string для ручного ввода */
+      connectionString: '',
+    },
+    loop: {
+      /** Имя переменной с массивом */
+      sourceVariable: '',
+      /** Имя переменной для текущего элемента */
+      itemVariable: 'item',
+      /** Имя переменной для индекса итерации */
+      indexVariable: 'index',
+      /** Параллельное выполнение */
+      parallel: false,
+      /** Пауза между итерациями в секундах */
+      delaySeconds: 0,
+      /** Максимум итераций (0 = без лимита) */
+      maxIterations: 0,
+      /** ID первой ноды тела цикла */
+      autoTransitionTo: '',
+      /** ID ноды после завершения цикла */
+      afterLoopTo: '',
+      /** Включить автопереход в тело */
+      enableAutoTransition: true,
+      /** Кнопки (для совместимости) */
+      buttons: [],
+      /** Тип клавиатуры (для совместимости) */
+      keyboardType: 'none',
+      /** Текст сообщения (для совместимости) */
+      messageText: '',
+    },
+    parallel_split: {
+      /** Ветки параллельного запуска */
+      parallelBranches: [
+        { id: 'pbranch_1', label: 'Ветка 1', target: '' },
+        { id: 'pbranch_2', label: 'Ветка 2', target: '' },
+      ],
+      /** Лимит одновременных веток */
+      maxConcurrent: 5,
+      /** Не ждать завершения веток */
+      awaitAll: false,
+      /** Защита от двойного запуска */
+      skipIfRunning: true,
+    },
+    bot_table: {
+      /** Имя таблицы */
+      tableName: '',
+      /** Операция: read, insert, update, upsert, delete, count, sum, max, min, avg, distinct, delete_all */
+      operation: 'read',
+      /** Условия WHERE */
+      where: [],
+      /** Обновления полей */
+      updates: [],
+      /** Данные строки */
+      row: {},
+      /** Ключ для upsert */
+      key: '',
+      /** Поведение при конфликте */
+      onConflict: 'ignore',
+      /** Переменная для результата */
+      saveResultTo: '',
+      /** Формат результата */
+      resultFormat: 'first_row',
+      /** Колонки для возврата */
+      returnColumns: [],
+      /** Сортировка */
+      orderBy: '',
+      /** Направление сортировки */
+      orderDirection: 'desc',
+      /** Лимит строк */
+      limit: 0,
+      /** Колонка для агрегации (sum, max, min, avg, distinct) */
+      aggregateColumn: '',
+      /** Смещение строк (для пагинации) */
+      offset: 0,
+      /** ID следующего узла */
+      autoTransitionTo: '',
+      /** Включить автопереход */
+      enableAutoTransition: false,
+      /** Вернуть ID вставленной строки (для insert/upsert) */
+      returnInsertedId: false,
+    },
+    delay: {
+      /** Задержка в секундах (поддерживает {переменные}) */
+      seconds: '3',
+      /** Единица измерения времени */
+      unit: 'seconds',
+      /** Режим: blocking — пауза, background — фоновый таймер */
+      mode: 'blocking',
+      /** ID следующего узла */
+      autoTransitionTo: '',
+      /** Включить автопереход */
+      enableAutoTransition: false,
+    },
+    userbot_edit_trigger: {
+      /** Сущность (чат/канал) для отслеживания */
+      userbotEntity: '',
+      /** Тип фильтра: any, contains, regex */
+      filterType: 'any',
+      /** Значение фильтра */
+      filterValue: '',
+      /** Переменная для текста отредактированного сообщения */
+      saveTextTo: 'edit_text',
+      /** Переменная для ID сообщения */
+      saveMessageIdTo: 'edit_msg_id',
+      /** Переменная для ID чата (опционально) */
+      saveChatIdTo: '',
+      /** Переменная для ID отправителя (опционально) */
+      saveSenderIdTo: '',
+      /** ID следующего узла */
+      autoTransitionTo: '',
     },
   };
   return defaults[type] || {};

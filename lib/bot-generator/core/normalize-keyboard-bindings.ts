@@ -230,6 +230,9 @@ function buildMergedKeyboardData(
     resizeKeyboard: typeof keyboardData.resizeKeyboard === 'boolean'
       ? keyboardData.resizeKeyboard
       : (typeof hostData.resizeKeyboard === 'boolean' ? hostData.resizeKeyboard : true),
+    shuffleButtons: typeof keyboardData.shuffleButtons === 'boolean'
+      ? keyboardData.shuffleButtons
+      : (typeof hostData.shuffleButtons === 'boolean' ? hostData.shuffleButtons : false),
   };
 }
 
@@ -297,7 +300,12 @@ export function normalizeKeyboardBindings(nodes: Node[], connections: GraphConne
         // Нода используется ТОЛЬКО edit_message (не привязана к message-хосту).
         // Помечаем специальным флагом — данные сохраняем, но keyboard-обработчик не нужен.
         (keyboardNode.data as Record<string, unknown>)._editMessageOnly = true;
-      } else {
+      }
+      // Orphan keyboard-ноды с кнопками сохраняют данные —
+      // генератор создаст для них edit_reply_markup обработчик.
+      // Очищаем только если нет кнопок и не используется edit_message.
+      const orphanButtons = (keyboardNode.data as Record<string, unknown>)?.buttons;
+      if (!editMessageKeyboardNodeIds.has(keyboardNodeId) && (!Array.isArray(orphanButtons) || orphanButtons.length === 0)) {
         clearKeyboardNodeData(keyboardNode);
       }
       continue;

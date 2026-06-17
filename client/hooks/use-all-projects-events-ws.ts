@@ -6,17 +6,21 @@
 
 import { useEffect, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useBotLogs } from '@/components/editor/bot/contexts/bot-logs-context';
+import { useActiveTerminals } from '@/components/editor/bot/contexts/ActiveTerminalsContext';
 
 /**
  * Структура события проекта, получаемого по WebSocket
  */
 interface ProjectEvent {
   /** Тип события */
-  type: 'token-created' | 'token-deleted' | 'bot-started' | 'bot-stopped' | 'bot-error';
+  type: 'token-created' | 'token-deleted' | 'bot-started' | 'bot-stopped' | 'bot-error' | 'stdout' | 'stderr' | 'status';
   /** Идентификатор проекта */
   projectId: number;
   /** ID токена (для событий бота) */
   tokenId?: number;
+  /** Содержимое лога (для stdout/stderr) */
+  content?: string;
   /** Дополнительные данные */
   data?: unknown;
   /** Временная метка */
@@ -87,6 +91,8 @@ function handleBotEvent(
 export function useAllProjectsEventsWs(options?: UseAllProjectsEventsWsOptions): void {
   const { onTokenCreated, onBotStarted } = options ?? {};
   const queryClient = useQueryClient();
+  const { addLog } = useBotLogs();
+  const { terminals, addTerminal } = useActiveTerminals();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onTokenCreatedRef = useRef(onTokenCreated);
@@ -95,6 +101,13 @@ export function useAllProjectsEventsWs(options?: UseAllProjectsEventsWsOptions):
   onBotStartedRef.current = onBotStarted;
   /** Флаг первого подключения — при первом onopen рефетч не нужен */
   const isFirstConnectRef = useRef(true);
+  /** Счётчик логов для диагностики */
+  const logCountRef = useRef(0);
+  /** Актуальный список терминалов для проверки наличия вкладки */
+  const terminalsRef = useRef(terminals);
+  terminalsRef.current = terminals;
+  /** Множество ключей для которых уже создана вкладка (избегаем повторных вызовов addTerminal) */
+  const createdTabsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     let destroyed = false;
@@ -122,6 +135,38 @@ export function useAllProjectsEventsWs(options?: UseAllProjectsEventsWsOptions):
       ws.onmessage = (event) => {
         try {
           const msg: ProjectEvent = JSON.parse(event.data);
+
+          // Логи бота (stdout/stderr) — всегда записываем в BotLogsContext.
+          // Дедупликация в addLog (500ms окно) предотвращает дубли с live-терминалом.
+          if ((msg.type === 'stdout' || msg.type === 'stderr') && msg.projectId && msg.tokenId && msg.content) {
+            const logKey = `${msg.projectId}-${msg.tokenId}`;
+            const ts = msg.timestamp ? new Date(msg.timestamp) : new Date();
+            addLog(logKey, {
+              id: `${Date.now()}-${++logCountRef.current}`,
+              content: msg.content,
+              type: msg.type,
+              timestamp: ts,
+            });
+
+            // Создаём вкладку терминала если её ещё нет
+            const tabKey = `${msg.projectId}_${msg.tokenId}`;
+            if (!createdTabsRef.current.has(tabKey)) {
+              const hasTab = terminalsRef.current.some(
+                t => t.projectId === msg.projectId && t.tokenId === msg.tokenId && t.tabType !== 'history'
+              );
+              if (!hasTab) {
+                addTerminal({
+                  projectId: msg.projectId,
+                  tokenId: msg.tokenId,
+                  botName: `Bot #${msg.tokenId}`,
+                  isRunning: true,
+                });
+              }
+              createdTabsRef.current.add(tabKey);
+            }
+            return;
+          }
+
           if (msg.type === 'token-created' || msg.type === 'token-deleted') {
             handleTokenEvent(queryClient, msg, onTokenCreatedRef.current);
           }

@@ -8,6 +8,7 @@ import { Plus, Radio } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { TabHeader } from '@/components/ui/tab-header';
 import { BroadcastStatsHeader } from './components/broadcast-stats-header';
 import { BroadcastList } from './components/broadcast-list';
 import { BroadcastDetail } from './components/broadcast-detail';
@@ -72,36 +73,37 @@ export function BroadcastPanel({ projectId, selectedTokenId, onSelectToken, allP
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Шапка с градиентом */}
-      <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-muted/40 to-background">
-        <div className="flex items-center gap-2.5">
-          <div className="rounded-lg bg-primary/10 p-2">
-            <Radio className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold leading-none">Рассылки</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              {total > 0 ? `${total} рассыл${total === 1 ? 'ка' : total < 5 ? 'ки' : 'ок'}` : 'Нет рассылок'}
-            </p>
-          </div>
-          {tokens.length > 0 && (
-            <BotTokenSelector
-              tokens={tokens}
-              selectedTokenId={selectedTokenId ?? null}
-              onSelect={(id) => onSelectToken?.(id)}
-            />
-          )}
-          {allProjects && allProjects.length > 1 && onProjectChange && (
-            <ProjectSelector
-              projects={allProjects}
-              selectedProjectId={projectId}
-              onSelect={(id) => { onSelectToken?.(null); onProjectChange(id); }}
-            />
-          )}
-        </div>
-        <Button size="sm" className="gap-1.5" onClick={() => setModalOpen(true)}>
-          <Plus className="h-4 w-4" />
-          Новая рассылка
-        </Button>
+      <TabHeader
+        icon={<Radio className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
+        title="Рассылки"
+        actions={
+          <Button size="sm" className="gap-1.5" onClick={() => setModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            <span className="hidden sm:inline">Новая рассылка</span>
+            <span className="sm:hidden">Новая</span>
+          </Button>
+        }
+      >
+        {allProjects && allProjects.length > 1 && onProjectChange && (
+          <ProjectSelector
+            projects={allProjects}
+            selectedProjectId={projectId}
+            onSelect={(id) => { onSelectToken?.(null); onProjectChange(id); }}
+          />
+        )}
+        {tokens.length > 0 && (
+          <BotTokenSelector
+            tokens={tokens}
+            selectedTokenId={selectedTokenId ?? null}
+            onSelect={(id) => onSelectToken?.(id)}
+          />
+        )}
+      </TabHeader>
+
+      {/* Баннер устаревшей вкладки */}
+      <div className="mx-4 sm:mx-6 mt-3 px-3 py-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-xs text-amber-200">
+        <span className="font-medium">Устаревшая вкладка.</span>{' '}
+        Рассылка теперь доступна в диалоге пользователя как отдельная панель. Функциональность этой вкладки будет перенесена туда.
       </div>
 
       {/* Split layout */}

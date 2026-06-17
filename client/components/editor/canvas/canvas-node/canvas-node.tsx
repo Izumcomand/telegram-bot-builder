@@ -1,4 +1,4 @@
-﻿/**
+/**
  * @fileoverview ������ ����� ������ ��������� � �� ������ �����.
  */
 
@@ -37,7 +37,9 @@ import { CallbackTriggerPreview } from './callback-trigger-preview';
 import { IncomingCallbackTriggerPreview } from './incoming-callback-trigger-preview';
 import { OutgoingMessageTriggerPreview } from './outgoing-message-trigger-preview';
 import { ManagedBotUpdatedTriggerPreview } from './managed-bot-updated-trigger-preview';
+import { ScheduleTriggerPreview } from './schedule-trigger-preview';
 import { ConditionNodePreview } from './condition-node-preview';
+import { ParallelSplitPreview } from './parallel-split-preview';
 import { MediaNodePreview } from './media-node-preview';
 import { HttpRequestPreview } from './http-request-preview';
 import { GetManagedBotTokenPreview } from './get-managed-bot-token-preview';
@@ -46,6 +48,13 @@ import { EditMessagePreview } from './edit-message-preview';
 import { SetVariablePreview } from './set-variable-preview';
 import { PsqlQueryPreview } from './psql-query-preview';
 import { ConvertFilePreview } from './convert-file-preview';
+import { LoopPreview } from './loop-preview';
+import { BotTablePreview } from './bot-table-preview';
+import { DelayPreview } from './delay-preview';
+import { UserbotMessagePreview } from './userbot-message-preview';
+import { UserbotClickButtonPreview } from './userbot-click-button-preview';
+import { UserbotInlineQueryPreview } from './userbot-inline-query-preview';
+import { UserbotEditTriggerPreview } from './userbot-edit-trigger-preview';
 import { MoveToSheetMenu } from './context-menu/move-to-sheet-menu';
 
 /**
@@ -60,8 +69,8 @@ import { MoveToSheetMenu } from './context-menu/move-to-sheet-menu';
  * @property {Function} [onDuplicate] - Обработчик дублирования узла (опционально)
  * @property {Function} [onMove] - Обработчик перемещения узла (опционально)
  * @property {Function} [onMoveEnd] - Обработчик завершения перемещения узла (опционально)
- * @property {number} [zoom] - Уровень масштабирования (по умолчанию 100)
- * @property {{x: number, y: number}} [pan] - Позиция панорамирования (по умолчанию {x: 0, y: 0})
+ * @property {React.MutableRefObject<number>} [zoomRef] - Ref-зеркало масштаба (читается в drag-обработчиках по месту)
+ * @property {React.MutableRefObject<{x:number,y:number}>} [panRef] - Ref-зеркало смещения холста
  * @property {Function} [setIsNodeBeingDragged] - Обработчик установки состояния перетаскивания (опционально)
  * @property {Function} [onSizeChange] - Обработчик изменения размера узла (опционально)
  */
@@ -69,7 +78,11 @@ interface CanvasNodeProps {
   node: Node;
   allNodes?: Node[];
   isSelected?: boolean;
+  /** Узел выделен рамкой (мульти-выделение) — отдельная индиго-подсветка */
+  isMultiSelected?: boolean;
   onClick?: () => void;
+  /** Обработчик Shift+клика — добавляет/убирает узел из мульти-выделения */
+  onShiftClick?: () => void;
   onDelete?: () => void;
   /** Обработчик дублирования узла с опциональной целевой позицией */
   onDuplicate?: ((targetPosition?: { x: number; y: number }) => void) | undefined;
@@ -84,8 +97,13 @@ interface CanvasNodeProps {
   onMove?: (position: { x: number; y: number }) => void;
   onMoveStart?: () => void;
   onMoveEnd?: () => void;
-  zoom?: number;
-  pan?: { x: number; y: number };
+  /**
+   * Ref-зеркало масштаба. Передаётся вместо меняющегося `zoom`, чтобы drag-обработчики
+   * читали актуальное значение по месту, а нода не ре-рендерилась на каждый кадр зума.
+   */
+  zoomRef?: React.MutableRefObject<number>;
+  /** Ref-зеркало смещения холста (аналогично `zoomRef`) */
+  panRef?: React.MutableRefObject<{ x: number; y: number }>;
   setIsNodeBeingDragged?: ((isDragging: boolean) => void) | undefined;
   onSizeChange?: (nodeId: string, size: { width: number; height: number }) => void;
   /** Обработчик начала перетаскивания от порта выхода */
@@ -137,7 +155,7 @@ interface CanvasNodeProps {
  * @param {CanvasNodeProps} props - Свойства компонента
  * @returns {JSX.Element} Компонент узла на холсте
  */
-export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDuplicate, onDuplicateAtPosition, onMove, onMoveStart, onMoveEnd, zoom = 100, pan = { x: 0, y: 0 }, setIsNodeBeingDragged, onSizeChange, onPortMouseDown, isConnectionTarget, isConnectionSource, isConnectedToDragging, isHoveredByConnection, forceHover, onHover, onButtonPortMount, sheets, onMoveToSheet, projectId }: CanvasNodeProps) {
+export function CanvasNode({ node, allNodes, isSelected, isMultiSelected, onClick, onShiftClick, onDelete, onDuplicate, onDuplicateAtPosition, onMove, onMoveStart, onMoveEnd, zoomRef, panRef, setIsNodeBeingDragged, onSizeChange, onPortMouseDown, isConnectionTarget, isConnectionSource, isConnectedToDragging, isHoveredByConnection, forceHover, onHover, onButtonPortMount, sheets, onMoveToSheet, projectId }: CanvasNodeProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   // Ref для dragOffset — позволяет читать актуальное значение в handleMouseMove
@@ -146,6 +164,11 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
   const dragOffsetRef = useRef(dragOffset);
   const nodeRef = useRef<HTMLDivElement>(null);
   const { menu, open: openContextMenu, close: closeContextMenu } = useNodeContextMenu();
+
+  /** Текущий масштаб из ref-зеркала (читается по месту в drag-обработчиках) */
+  const readZoom = () => zoomRef?.current ?? 100;
+  /** Текущее смещение холста из ref-зеркала */
+  const readPan = () => panRef?.current ?? { x: 0, y: 0 };
 
   /**
    * Переводит экранную точку в координаты canvas с учетом scroll контейнера.
@@ -160,7 +183,7 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     const canvas = transformedContainer?.parentElement;
     const viewport = getCanvasViewportMetrics(canvas);
     if (!viewport) return { x: screenX, y: screenY };
-    return screenPointToCanvasPoint(screenX, screenY, viewport, pan, zoom);
+    return screenPointToCanvasPoint(screenX, screenY, viewport, readPan(), readZoom());
   };
   void getCanvasPoint;
 
@@ -170,6 +193,23 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
    */
   const handlePortMouseDown = (e: React.MouseEvent, portType: PortType, buttonId?: string, portCenter?: { x: number; y: number }) => {
     onPortMouseDown?.(e, node.id, portType, buttonId, portCenter);
+  };
+
+  /**
+   * Обработчик клика по узлу.
+   * При зажатом Shift переключает узел в мульти-выделении (toggle), иначе —
+   * выполняет обычный выбор одного узла. Во время перетаскивания клик игнорируется.
+   *
+   * @param e - Событие мыши
+   */
+  const handleClick = (e: React.MouseEvent) => {
+    if (isDragging) return;
+    if (e.shiftKey && onShiftClick) {
+      e.stopPropagation();
+      onShiftClick();
+      return;
+    }
+    onClick?.();
   };
 
   // Touch состояние для мобильного перемещения элементов
@@ -193,6 +233,8 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
 
     if (canvas) {
       const canvasRect = canvas.getBoundingClientRect();
+      const zoom = readZoom();
+      const pan = readPan();
       const zoomFactor = zoom / 100;
 
       // Рассчитываем смещение в канвасных координатах
@@ -239,6 +281,8 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
       const screenY = e.clientY - canvasRect.top;
 
       // Преобразуем экранные координаты в координаты канваса с учетом зума и панорамирования
+      const zoom = readZoom();
+      const pan = readPan();
       const zoomFactor = zoom / 100;
       const canvasX = (screenX - pan.x) / zoomFactor - dragOffsetRef.current.x;
       const canvasY = (screenY - pan.y) / zoomFactor - dragOffsetRef.current.y;
@@ -264,14 +308,13 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     }
   };
 
-  // Touch обработчики для мобильного перемещения элементов
-  const handleTouchStart = (e: React.TouchEvent) => {
+  // Touch обработчики для мобильного перемещения элементов (нативные, для passive: false)
+  const handleNativeTouchStart = (e: TouchEvent) => {
     // Не запускать события если кликнули по кнопке
     if ((e.target as HTMLElement).closest('button')) return;
 
-    // Предотвращаем стандартное поведение браузера
-    e.preventDefault();
-    e.stopPropagation(); // Останавливаем всплытие, чтобы не конфликтовать с панорамированием холста
+    // Останавливаем всплытие, чтобы не конфликтовать с панорамированием холста
+    e.stopPropagation();
 
     const touch = e.touches[0];
     if (!touch) return;
@@ -290,6 +333,8 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
 
       if (canvas) {
         const canvasRect = canvas.getBoundingClientRect();
+        const zoom = readZoom();
+        const pan = readPan();
         const zoomFactor = zoom / 100;
 
         // Рассчитываем смещение в канвасных координатах
@@ -307,11 +352,13 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     }
   };
 
-  const handleTouchMove = (e: React.TouchEvent) => {
+  const handleNativeTouchMove = (e: TouchEvent) => {
     const touch = e.touches[0];
     if (!touch || !onMove) return;
 
-    e.preventDefault();
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     e.stopPropagation();
 
     // Вычисляем расстояние от начальной точки касания
@@ -342,6 +389,8 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     const screenX = touch.clientX - canvasRect.left;
     const screenY = touch.clientY - canvasRect.top;
 
+    const zoom = readZoom();
+    const pan = readPan();
     const zoomFactor = zoom / 100;
     const canvasX = (screenX - pan.x) / zoomFactor - touchOffset.x;
     const canvasY = (screenY - pan.y) / zoomFactor - touchOffset.y;
@@ -353,8 +402,10 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     onMove({ x: snappedX, y: snappedY });
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    e.preventDefault();
+  const handleNativeTouchEnd = (e: TouchEvent) => {
+    if (e.cancelable) {
+      e.preventDefault();
+    }
     e.stopPropagation();
 
     const touchEndTime = Date.now();
@@ -447,6 +498,41 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
     };
   }, [node.id, onSizeChange]);
 
+  /**
+   * Refs для нативных touch-обработчиков — позволяют useEffect не перерегистрировать
+   * listeners при каждом рендере, но всегда вызывать актуальную версию функции
+   */
+  const touchStartRef = useRef(handleNativeTouchStart);
+  const touchMoveRef = useRef(handleNativeTouchMove);
+  const touchEndRef = useRef(handleNativeTouchEnd);
+  touchStartRef.current = handleNativeTouchStart;
+  touchMoveRef.current = handleNativeTouchMove;
+  touchEndRef.current = handleNativeTouchEnd;
+
+  /**
+   * Регистрация touch-обработчиков с { passive: false }
+   * чтобы preventDefault() работал корректно в Chrome
+   */
+  useEffect(() => {
+    const el = nodeRef.current;
+    if (!el) return;
+
+    const opts: AddEventListenerOptions = { passive: false };
+    const onStart = (e: TouchEvent) => touchStartRef.current(e);
+    const onMove = (e: TouchEvent) => touchMoveRef.current(e);
+    const onEnd = (e: TouchEvent) => touchEndRef.current(e);
+
+    el.addEventListener('touchstart', onStart, opts);
+    el.addEventListener('touchmove', onMove, opts);
+    el.addEventListener('touchend', onEnd, opts);
+
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+    };
+  }, []);
+
   const isDragActive = isDragging || isTouchDragging;
   const [isHovered, setIsHovered] = useState(false);
   /** ����������� hover: ��������� ��� �������������� �� �������� */
@@ -466,7 +552,7 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
         position: 'absolute',
         left: node.position.x,
         top: node.position.y,
-        zIndex: isDragActive ? 1000 : isSelected ? 100 : 10,
+        zIndex: isDragActive ? 1000 : isSelected || isMultiSelected ? 100 : 10,
         overflow: 'visible',
       }}
       onMouseEnter={() => { setIsHovered(true); onHover?.(node.id); }}
@@ -477,9 +563,10 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
 
       {/* Порт выхода — снаружи основного div, позиционируется относительно wrapper */}
       {/* Узел condition имеет порты на каждой ветке — общий порт не нужен */}
-      {(node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger') ? (
+      {/* Узел loop имеет два порта (тело + далее) внутри превью */}
+      {(node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'schedule_trigger' || (node.type as any) === 'userbot_edit_trigger') ? (
         <OutputPort portType="trigger-next" onPortMouseDown={handlePortMouseDown} isActive={isConnectionSource} />
-      ) : node.type !== 'condition' && node.type !== 'keyboard' ? (
+      ) : node.type !== 'condition' && node.type !== 'keyboard' && node.type !== 'loop' && (node.type as any) !== 'parallel_split' ? (
         <OutputPort portType={node.type === 'input' ? 'input-target' : 'auto-transition'} onPortMouseDown={handlePortMouseDown} isActive={isConnectionSource} />
       ) : null}
 
@@ -490,10 +577,10 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
         className={cn(
           "bg-white/90 dark:bg-slate-900/90 rounded-2xl border-2 relative select-none",
           // Компактный размер для триггеров
-          node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger'
+          node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'schedule_trigger' || (node.type as any) === 'userbot_edit_trigger' || (node.type as any) === 'bot_table' || (node.type as any) === 'delay'
             ? "p-3 w-52"
             : (node.type as any) === 'callback_trigger' || (node.type as any) === 'answer_callback_query'
-            ? "p-3 w-52"            : node.type === 'condition'
+            ? "p-3 w-52"            : node.type === 'condition' || (node.type as any) === 'parallel_split'
             ? "p-4 w-64"
             : node.type === 'message'
             ? "p-4 w-80"
@@ -504,18 +591,17 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
             : "p-6 w-80",
           isDragActive ? "shadow-lg cursor-grabbing z-50 border-blue-500" : "shadow-xl hover:shadow-2xl border-gray-200 dark:border-slate-700 hover:border-gray-300 dark:hover:border-slate-600 transition-all duration-200",
           isSelected && !isDragActive ? "ring-4 ring-blue-500/20 shadow-2xl shadow-blue-500/10 border-blue-500" : "",
+          /* Индиго-подсветка для нод, выделенных рамкой (мульти-выделение). Синее одиночное выделение в приоритете */
+          isMultiSelected && !isSelected && !isDragActive ? "ring-4 ring-indigo-500/50 shadow-2xl shadow-indigo-500/20 border-indigo-500" : "",
           isConnectionTarget ? "ring-4 ring-green-400/60 border-green-400 shadow-green-400/20" : "",
           isConnectedToDragging && !isDragActive ? "ring-2 ring-violet-400 border-violet-500 scale-[1.02]" : "",
           effectiveHover && !isDragActive && !isSelected && !isConnectionSource ? "ring-2 ring-sky-400 border-sky-400 scale-[1.02]" : "",
           isHoveredByConnection && !effectiveHover && !isDragActive && !isConnectedToDragging ? "ring-2 ring-violet-400 border-violet-500" : "",
           onMove ? "cursor-grab" : "cursor-pointer"
         )}
-        onClick={!isDragging ? onClick : undefined}
+        onClick={handleClick}
         onMouseDown={handleMouseDown}
         onContextMenu={openContextMenu}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
         style={{
           position: 'relative',
           overflow: 'visible',
@@ -528,13 +614,16 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
             ? '0 0 0 2px #8b5cf6, 0 0 20px 4px rgba(139, 92, 246, 0.5), 0 0 40px 8px rgba(139, 92, 246, 0.2)'
             : effectiveHover && !isSelected && !isConnectionSource
             ? '0 0 0 2px #38bdf8, 0 0 16px 4px rgba(56, 189, 248, 0.45), 0 0 32px 6px rgba(56, 189, 248, 0.2)'
+            : // Яркое индиго-свечение для нод, выделенных рамкой (мульти-выделение), по интенсивности как при наведении
+            isMultiSelected && !isSelected && !isConnectionSource && !isDragActive
+            ? '0 0 0 2px #6366f1, 0 0 16px 4px rgba(99, 102, 241, 0.45), 0 0 32px 6px rgba(99, 102, 241, 0.2)'
             : isHoveredByConnection
             ? '0 0 0 2px #8b5cf6, 0 0 20px 4px rgba(139, 92, 246, 0.5), 0 0 40px 8px rgba(139, 92, 246, 0.2)'
             : undefined,
         }}
       >
         {/* Заголовок узла — скрыт для триггеров, узла сообщения и узла условия */}
-        {node.type !== 'command_trigger' && node.type !== 'text_trigger' && node.type !== 'incoming_message_trigger' && node.type !== 'group_message_trigger' && (node.type as any) !== 'callback_trigger' && (node.type as any) !== 'incoming_callback_trigger' && (node.type as any) !== 'outgoing_message_trigger' && (node.type as any) !== 'managed_bot_updated_trigger' && (node.type as any) !== 'get_managed_bot_token' && (node.type as any) !== 'answer_callback_query' && (node.type as any) !== 'edit_message' && node.type !== 'message' && node.type !== 'condition' && node.type !== 'keyboard' && node.type !== 'input' && (
+        {node.type !== 'command_trigger' && node.type !== 'text_trigger' && node.type !== 'incoming_message_trigger' && node.type !== 'group_message_trigger' && (node.type as any) !== 'callback_trigger' && (node.type as any) !== 'incoming_callback_trigger' && (node.type as any) !== 'outgoing_message_trigger' && (node.type as any) !== 'managed_bot_updated_trigger' && (node.type as any) !== 'schedule_trigger' && (node.type as any) !== 'userbot_edit_trigger' && (node.type as any) !== 'get_managed_bot_token' && (node.type as any) !== 'answer_callback_query' && (node.type as any) !== 'edit_message' && (node.type as any) !== 'set_variable' && node.type !== 'message' && node.type !== 'condition' && node.type !== 'keyboard' && node.type !== 'input' && (node.type as any) !== 'loop' && (node.type as any) !== 'delay' && (node.type as any) !== 'userbot_message' && (node.type as any) !== 'userbot_click_button' && (node.type as any) !== 'userbot_inline_query' && (node.type as any) !== 'parallel_split' && (
           <NodeHeader node={node} onMove={!!onMove} />
         )}
 
@@ -607,6 +696,9 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
         {/* Managed Bot Updated Trigger Preview */}
         {(node.type as any) === 'managed_bot_updated_trigger' && <ManagedBotUpdatedTriggerPreview node={node} />}
 
+        {/* Schedule Trigger Preview */}
+        {(node.type as any) === 'schedule_trigger' && <ScheduleTriggerPreview node={node} />}
+
         {/* Answer Callback Query Preview */}
         {(node.type as any) === 'answer_callback_query' && <AnswerCallbackQueryPreview node={node} />}
 
@@ -616,15 +708,53 @@ export function CanvasNode({ node, allNodes, isSelected, onClick, onDelete, onDu
         {/* Set Variable Preview */}
         {(node.type as any) === 'set_variable' && <SetVariablePreview node={node} />}
 
+        {/* Delay Preview */}
+        {(node.type as any) === 'delay' && <DelayPreview data={node.data} />}
+
+        {/* Userbot Message Preview */}
+        {(node.type as any) === 'userbot_message' && <UserbotMessagePreview node={node} />}
+
+        {/* Userbot Click Button Preview */}
+        {(node.type as any) === 'userbot_click_button' && <UserbotClickButtonPreview node={node} />}
+
+        {/* Userbot Inline Query Preview */}
+        {(node.type as any) === 'userbot_inline_query' && <UserbotInlineQueryPreview node={node} />}
+
+        {/* Userbot Edit Trigger Preview */}
+        {(node.type as any) === 'userbot_edit_trigger' && <UserbotEditTriggerPreview node={node} />}
+
         {/* SQL Query Preview */}
         {(node.type as any) === 'psql_query' && <PsqlQueryPreview node={node} />}
+
+        {/* Bot Table Preview */}
+        {(node.type as any) === 'bot_table' && <BotTablePreview node={node} />}
 
         {/* Convert File Preview */}
         {(node.type as any) === 'convert_file' && <ConvertFilePreview node={node} />}
 
+        {/* Loop Preview */}
+        {(node.type as any) === 'loop' && (
+          <LoopPreview
+            node={node}
+            onPortMouseDown={handlePortMouseDown}
+            isConnectionSource={isConnectionSource}
+            onButtonPortMount={onButtonPortMount}
+          />
+        )}
+
         {/* Condition Node Preview */}
         {node.type === 'condition' && (
           <ConditionNodePreview
+            node={node}
+            onPortMouseDown={handlePortMouseDown}
+            isConnectionSource={isConnectionSource}
+            onButtonPortMount={onButtonPortMount}
+          />
+        )}
+
+        {/* Parallel Split Preview */}
+        {(node.type as any) === 'parallel_split' && (
+          <ParallelSplitPreview
             node={node}
             onPortMouseDown={handlePortMouseDown}
             isConnectionSource={isConnectionSource}

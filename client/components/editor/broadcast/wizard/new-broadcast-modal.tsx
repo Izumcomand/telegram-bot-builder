@@ -3,7 +3,7 @@
  * @module client/components/editor/broadcast/wizard/new-broadcast-modal
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,6 +14,7 @@ import { StepAudience } from './step-audience';
 import { StepMessage } from './step-message';
 import { StepConfirm } from './step-confirm';
 import { BroadcastProgress } from './broadcast-progress';
+import { WizardStepper } from './wizard-stepper';
 import { useCreateBroadcast } from '../hooks/use-create-broadcast';
 import type { NewBroadcastFormData, Broadcast } from '../types';
 
@@ -31,6 +32,10 @@ interface NewBroadcastModalProps {
   tokenId?: number | null;
   /** Колбэк обновления списка рассылок */
   refetch?: () => void;
+  /** Предзаполненный текст сообщения (опционально) */
+  initialMessageText?: string;
+  /** Предзаполненные медиафайлы (опционально) */
+  initialMediaUrls?: string[];
 }
 
 /** Начальные данные формы */
@@ -38,6 +43,8 @@ const INITIAL_FORM: NewBroadcastFormData = {
   name: '',
   messageText: '',
   mediaUrls: [],
+  buttons: [],
+  buttonsPerRow: 0,
   filters: { audienceType: 'all' },
 };
 
@@ -51,10 +58,27 @@ const STEP_TITLES = ['Аудитория', 'Сообщение', 'Подтвер
  * @param props - Свойства компонента
  * @returns JSX элемент модального окна
  */
-export function NewBroadcastModal({ open, onClose, projectId, tokenId, refetch }: NewBroadcastModalProps) {
+export function NewBroadcastModal({ open, onClose, projectId, tokenId, refetch, initialMessageText, initialMediaUrls }: NewBroadcastModalProps) {
+  /** Если текст предзаполнен — пропускаем шаг сообщения */
+  const skipMessageStep = !!initialMessageText;
   const [step, setStep] = useState<1 | 2 | 3 | 'progress'>(1);
-  const [formData, setFormData] = useState<NewBroadcastFormData>(INITIAL_FORM);
+  const [formData, setFormData] = useState<NewBroadcastFormData>({
+    ...INITIAL_FORM,
+    messageText: initialMessageText ?? '',
+    mediaUrls: initialMediaUrls ?? [],
+  });
   const [createdBroadcast, setCreatedBroadcast] = useState<Broadcast | null>(null);
+
+  /** Синхронизируем messageText и mediaUrls при открытии модалки */
+  useEffect(() => {
+    if (open) {
+      setFormData((prev) => ({
+        ...prev,
+        ...(initialMessageText ? { messageText: initialMessageText } : {}),
+        ...(initialMediaUrls ? { mediaUrls: initialMediaUrls } : {}),
+      }));
+    }
+  }, [open, initialMessageText, initialMediaUrls]);
 
   const updateForm = (data: Partial<NewBroadcastFormData>) => {
     setFormData((prev) => ({ ...prev, ...data }));
@@ -65,7 +89,6 @@ export function NewBroadcastModal({ open, onClose, projectId, tokenId, refetch }
     tokenId,
     refetch,
     onSuccess: (broadcastId) => {
-      // Создаём временный объект broadcast для отображения прогресса
       setCreatedBroadcast({
         id: broadcastId,
         projectId,
@@ -88,28 +111,34 @@ export function NewBroadcastModal({ open, onClose, projectId, tokenId, refetch }
 
   const handleClose = () => {
     setStep(1);
-    setFormData(INITIAL_FORM);
+    setFormData({ ...INITIAL_FORM, messageText: initialMessageText ?? '', mediaUrls: initialMediaUrls ?? [] });
     setCreatedBroadcast(null);
     onClose();
   };
 
-  const title = step === 'progress'
-    ? '📊 Прогресс рассылки'
-    : `📢 Новая рассылка — ${STEP_TITLES[(step as number) - 1]}`;
+  /** Текущий номер шага для stepper */
+  const currentStepNumber = typeof step === 'number' ? step : 3;
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && handleClose()}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg w-[calc(100vw-2rem)] sm:w-full p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
+          <DialogTitle className="text-lg bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+            📢 Новая рассылка
+          </DialogTitle>
         </DialogHeader>
+
+        {step !== 'progress' && (
+          <WizardStepper steps={STEP_TITLES} currentStep={currentStepNumber} />
+        )}
 
         {step === 1 && (
           <StepAudience
             projectId={projectId}
+            tokenId={tokenId}
             formData={formData}
             onChange={updateForm}
-            onNext={() => setStep(2)}
+            onNext={() => setStep(skipMessageStep ? 3 : 2)}
             onCancel={handleClose}
           />
         )}
@@ -128,7 +157,7 @@ export function NewBroadcastModal({ open, onClose, projectId, tokenId, refetch }
             formData={formData}
             isLoading={createMutation.isPending}
             onConfirm={() => createMutation.mutate(formData)}
-            onBack={() => setStep(2)}
+            onBack={() => setStep(skipMessageStep ? 1 : 2)}
           />
         )}
         {step === 'progress' && createdBroadcast && (

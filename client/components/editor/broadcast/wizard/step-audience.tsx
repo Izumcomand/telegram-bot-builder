@@ -4,11 +4,16 @@
  */
 
 import { useState } from 'react';
+import { Users, Calendar, Activity, UserCheck, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { cn } from '@/utils/utils';
 import { useAudiencePreview } from '../hooks/use-audience-preview';
+import { ManualUserSelect } from './manual-user-select';
+import { GroupSelect } from './group-select';
+import { AudienceFilters } from './audience-filters';
 import type { NewBroadcastFormData } from '../types';
 
 /**
@@ -17,6 +22,8 @@ import type { NewBroadcastFormData } from '../types';
 interface StepAudienceProps {
   /** Идентификатор проекта */
   projectId: number;
+  /** Идентификатор токена бота */
+  tokenId?: number | null;
   /** Текущие данные формы */
   formData: NewBroadcastFormData;
   /** Обновление данных формы */
@@ -27,12 +34,20 @@ interface StepAudienceProps {
   onCancel: () => void;
 }
 
+/** Варианты аудитории с иконками */
+const AUDIENCE_OPTIONS = [
+  { value: 'all', label: 'Все пользователи', icon: Users },
+  { value: 'date', label: 'По дате регистрации', icon: Calendar },
+  { value: 'activity', label: 'По активности', icon: Activity },
+  { value: 'manual', label: 'Выбрать вручную', icon: UserCheck },
+] as const;
+
 /**
  * Шаг выбора аудитории рассылки с предпросмотром количества получателей
  * @param props - Свойства компонента
  * @returns JSX элемент шага выбора аудитории
  */
-export function StepAudience({ projectId, formData, onChange, onNext, onCancel }: StepAudienceProps) {
+export function StepAudience({ projectId, tokenId, formData, onChange, onNext, onCancel }: StepAudienceProps) {
   const [tagInput, setTagInput] = useState('');
   const audienceType = formData.filters.audienceType;
 
@@ -42,6 +57,12 @@ export function StepAudience({ projectId, formData, onChange, onNext, onCancel }
 
   const { count, isLoading } = useAudiencePreview(projectId, apiFilters);
 
+  /** Количество получателей: для ручного выбора — длина массива userIds */
+  const recipientCount = audienceType === 'manual'
+    ? (formData.filters.userIds?.length ?? 0)
+    : count;
+
+  /** Обработчик добавления тега */
   const handleAddTag = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && tagInput.trim()) {
       const tags = [...(formData.filters.tags ?? []), tagInput.trim()];
@@ -50,15 +71,30 @@ export function StepAudience({ projectId, formData, onChange, onNext, onCancel }
     }
   };
 
+  /** Обработчик удаления тега */
   const handleRemoveTag = (tag: string) => {
     const tags = (formData.filters.tags ?? []).filter((t) => t !== tag);
     onChange({ filters: { ...formData.filters, tags } });
   };
 
+  /** Обработчик изменения выбранных userId */
+  const handleUserIdsChange = (userIds: string[]) => {
+    onChange({ filters: { ...formData.filters, userIds } });
+  };
+
+  /** Обработчик изменения выбранных групп */
+  const handleGroupIdsChange = (groupIds: string[]) => {
+    onChange({ filters: { ...formData.filters, groupIds } });
+  };
+
   return (
     <div className="space-y-4">
-      <div className="space-y-1">
-        <Label>Название рассылки</Label>
+      {/* Название рассылки */}
+      <div className="space-y-1.5">
+        <Label className="flex items-center gap-1.5">
+          <Tag className="w-3.5 h-3.5 text-blue-500" />
+          Название рассылки
+        </Label>
         <Input
           value={formData.name}
           onChange={(e) => onChange({ name: e.target.value })}
@@ -66,59 +102,87 @@ export function StepAudience({ projectId, formData, onChange, onNext, onCancel }
         />
       </div>
 
+      {/* Выбор аудитории */}
       <div className="space-y-2">
-        <Label>Аудитория</Label>
+        <Label className="flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5 text-blue-500" />
+          Аудитория
+        </Label>
         <RadioGroup
           value={audienceType}
           onValueChange={(v) => onChange({ filters: { ...formData.filters, audienceType: v as NewBroadcastFormData['filters']['audienceType'] } })}
+          className="grid grid-cols-2 gap-2"
         >
-          {[
-            { value: 'all', label: 'Все пользователи' },
-            { value: 'date', label: 'По дате регистрации' },
-            { value: 'activity', label: 'По активности' },
-          ].map(({ value, label }) => (
-            <div key={value} className="flex items-center gap-2">
-              <RadioGroupItem value={value} id={`aud-${value}`} />
-              <Label htmlFor={`aud-${value}`} className="cursor-pointer">{label}</Label>
-            </div>
+          {AUDIENCE_OPTIONS.map(({ value, label, icon: Icon }) => (
+            <label
+              key={value}
+              htmlFor={`aud-${value}`}
+              className={cn(
+                'flex items-center gap-2 rounded-xl border p-2.5 cursor-pointer transition-all',
+                'hover:bg-accent/60 hover:shadow-sm',
+                audienceType === value && 'border-blue-500/50 bg-gradient-to-r from-blue-500/10 to-violet-500/10 shadow-sm',
+              )}
+            >
+              <RadioGroupItem value={value} id={`aud-${value}`} className="sr-only" />
+              <Icon className={cn('w-4 h-4 shrink-0', audienceType === value ? 'text-blue-500' : 'text-muted-foreground')} />
+              <span className="text-sm">{label}</span>
+            </label>
           ))}
         </RadioGroup>
       </div>
 
-      {audienceType === 'tags' && (
-        <div className="space-y-2">
-          <Input value={tagInput} onChange={(e) => setTagInput(e.target.value)} onKeyDown={handleAddTag} placeholder="Введите тег и нажмите Enter" />
-          <div className="flex flex-wrap gap-1">
-            {(formData.filters.tags ?? []).map((tag) => (
-              <span key={tag} className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">
-                {tag}<button onClick={() => handleRemoveTag(tag)} className="hover:text-red-500">×</button>
-              </span>
-            ))}
-          </div>
-        </div>
+      {/* Фильтры по типу аудитории */}
+      <AudienceFilters
+        audienceType={audienceType}
+        formData={formData}
+        onChange={onChange}
+        tagInput={tagInput}
+        setTagInput={setTagInput}
+        onAddTag={handleAddTag}
+        onRemoveTag={handleRemoveTag}
+      />
+
+      {audienceType === 'manual' && (
+        <ManualUserSelect
+          projectId={projectId}
+          tokenId={tokenId}
+          selectedUserIds={formData.filters.userIds ?? []}
+          onChangeUserIds={handleUserIdsChange}
+        />
       )}
 
-      {audienceType === 'date' && (
-        <div className="grid grid-cols-2 gap-2">
-          <div><Label className="text-xs">От</Label><Input type="date" value={formData.filters.registeredFrom ?? ''} onChange={(e) => onChange({ filters: { ...formData.filters, registeredFrom: e.target.value } })} /></div>
-          <div><Label className="text-xs">До</Label><Input type="date" value={formData.filters.registeredTo ?? ''} onChange={(e) => onChange({ filters: { ...formData.filters, registeredTo: e.target.value } })} /></div>
-        </div>
-      )}
-
-      {audienceType === 'activity' && (
-        <div className="grid grid-cols-2 gap-2">
-          <div><Label className="text-xs">Активен от</Label><Input type="date" value={formData.filters.activeFrom ?? ''} onChange={(e) => onChange({ filters: { ...formData.filters, activeFrom: e.target.value } })} /></div>
-          <div><Label className="text-xs">Активен до</Label><Input type="date" value={formData.filters.activeTo ?? ''} onChange={(e) => onChange({ filters: { ...formData.filters, activeTo: e.target.value } })} /></div>
-        </div>
-      )}
-
-      <div className="text-sm text-muted-foreground border rounded p-2 bg-muted/30">
-        👥 Получателей: <strong>{isLoading ? '...' : count.toLocaleString('ru-RU')}</strong>
+      {/* Секция групп */}
+      <div className="rounded-xl border border-violet-200/50 dark:border-violet-800/40 bg-gradient-to-r from-violet-500/5 to-fuchsia-500/5 p-3 space-y-2">
+        <Label className="flex items-center gap-1.5">
+          <Users className="w-3.5 h-3.5 text-violet-500" />
+          Также отправить в группы
+        </Label>
+        <GroupSelect
+          projectId={projectId}
+          selectedGroupIds={formData.filters.groupIds ?? []}
+          onChangeGroupIds={handleGroupIdsChange}
+        />
       </div>
 
+      {/* Счётчик получателей */}
+      <div className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-500/10 to-violet-500/10 border border-blue-200/40 dark:border-blue-800/40 p-3">
+        <Users className="w-5 h-5 text-blue-500" />
+        <span className="text-sm text-muted-foreground">Получателей:</span>
+        <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-violet-600 bg-clip-text text-transparent">
+          {audienceType === 'manual' ? recipientCount.toLocaleString('ru-RU') : (isLoading ? '...' : count.toLocaleString('ru-RU'))}
+        </span>
+      </div>
+
+      {/* Кнопки навигации */}
       <div className="flex justify-between pt-2">
-        <Button variant="outline" onClick={onCancel}>Отмена</Button>
-        <Button onClick={onNext} disabled={!formData.name.trim()}>Далее →</Button>
+        <Button variant="ghost" onClick={onCancel}>Отмена</Button>
+        <Button
+          onClick={onNext}
+          disabled={!formData.name.trim()}
+          className="bg-gradient-to-r from-blue-500 to-violet-500 text-white hover:from-blue-600 hover:to-violet-600"
+        >
+          Далее →
+        </Button>
       </div>
     </div>
   );

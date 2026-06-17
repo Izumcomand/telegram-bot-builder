@@ -5,6 +5,7 @@
  * выпадающий список выбора масштаба и кнопку "Уместить всё".
  */
 
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 /**
@@ -29,6 +30,10 @@ interface ZoomControlsProps {
   onFitToContent: () => void;
   /** Колбэк установки уровня масштаба */
   onZoomLevelChange: (level: number) => void;
+  /** Авто-уместить при переключении листа */
+  autoFitOnSheetChange?: boolean;
+  /** Колбэк переключения авто-уместить */
+  onAutoFitOnSheetChangeToggle?: (value: boolean) => void;
 }
 
 /**
@@ -59,13 +64,64 @@ export function ZoomControls({
   onZoomIn,
   onResetZoom,
   onFitToContent,
-  onZoomLevelChange
+  onZoomLevelChange,
+  autoFitOnSheetChange: autoFitProp,
+  onAutoFitOnSheetChangeToggle,
 }: ZoomControlsProps) {
+  /** Локальное состояние для переключателя авто-fit (если пропсы не переданы) */
+  const [localAutoFit, setLocalAutoFit] = useState(() => {
+    try { return localStorage.getItem('canvas-auto-fit-sheet') !== 'false'; } catch { return true; }
+  });
+
+  /** Синхронизация с localStorage при изменении из горячей клавиши */
+  useEffect(() => {
+    const sync = () => {
+      try { setLocalAutoFit(localStorage.getItem('canvas-auto-fit-sheet') !== 'false'); } catch {}
+    };
+    window.addEventListener('storage', sync);
+    /** Интервал-фоллбэк для изменений в том же окне */
+    const id = setInterval(sync, 500);
+    return () => { window.removeEventListener('storage', sync); clearInterval(id); };
+  }, []);
+
+  const autoFitValue = autoFitProp ?? localAutoFit;
+  const handleAutoFitToggle = (value: boolean) => {
+    try { localStorage.setItem('canvas-auto-fit-sheet', String(value)); } catch {}
+    setLocalAutoFit(value);
+    onAutoFitOnSheetChangeToggle?.(value);
+  };
+
+  /**
+   * Хелпер для long-press: сразу выполняет действие (одиночный клик),
+   * затем при удержании повторяет с ускорением. onClick не используется,
+   * чтобы не конфликтовать с pointer-событиями.
+   */
+  const repeatTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startRepeat = useCallback((action: () => void) => {
+    action(); // немедленно — обрабатывает одиночный клик
+    let delay = 400;
+    const tick = () => {
+      action();
+      delay = Math.max(delay * 0.7, 50);
+      repeatTimerRef.current = setTimeout(tick, delay);
+    };
+    repeatTimerRef.current = setTimeout(tick, delay);
+  }, []);
+  const stopRepeat = useCallback(() => {
+    if (repeatTimerRef.current) {
+      clearTimeout(repeatTimerRef.current);
+      repeatTimerRef.current = null;
+    }
+  }, []);
+
   return (
     <>
       {/* Кнопка уменьшения масштаба */}
       <button
-        onClick={onZoomOut}
+        onPointerDown={() => startRepeat(onZoomOut)}
+        onPointerUp={stopRepeat}
+        onPointerLeave={stopRepeat}
+        onPointerCancel={stopRepeat}
         disabled={!canZoomOut}
         className={`${BUTTON_BASE_CLASSES} ${BUTTON_INACTIVE_CLASSES} ${!canZoomOut ? BUTTON_DISABLED_CLASSES : ''}`}
         title="Уменьшить масштаб (Ctrl + -)"
@@ -164,7 +220,10 @@ export function ZoomControls({
 
       {/* Кнопка увеличения масштаба */}
       <button
-        onClick={onZoomIn}
+        onPointerDown={() => startRepeat(onZoomIn)}
+        onPointerUp={stopRepeat}
+        onPointerLeave={stopRepeat}
+        onPointerCancel={stopRepeat}
         disabled={!canZoomIn}
         className={`${BUTTON_BASE_CLASSES} ${BUTTON_INACTIVE_CLASSES} ${!canZoomIn ? BUTTON_DISABLED_CLASSES : ''} flex items-center justify-center`}
         title="Увеличить масштаб (Ctrl + +)"
@@ -180,6 +239,18 @@ export function ZoomControls({
         title="Уместить в экран (Ctrl + 1)"
       >
         <i className={`fas fa-expand-arrows-alt ${ICON_CLASSES}`} />
+      </button>
+
+      {/* Toggle авто-уместить при смене листа */}
+      <button
+        onClick={() => handleAutoFitToggle(!autoFitValue)}
+        className={`${BUTTON_BASE_CLASSES} ${autoFitValue
+          ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border-blue-500/30'
+          : BUTTON_INACTIVE_CLASSES
+        } flex items-center justify-center`}
+        title={autoFitValue ? 'Авто-уместить при смене листа: ВКЛ' : 'Авто-уместить при смене листа: ВЫКЛ'}
+      >
+        <span className="text-[10px] font-bold leading-none">A</span>
       </button>
     </>
   );

@@ -30,8 +30,24 @@ const GUEST_USER: AppUser = { isGuest: true };
  * @returns Объект с пользователем, методами login/logout, флагом загрузки, хелпером isGuest и флагом sessionReady
  */
 export function useTelegramAuth() {
-  const [user, setUser] = useState<AppUser | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [user, setUser] = useState<AppUser | null>(() => {
+    // Синхронно читаем пользователя из localStorage чтобы избежать flash GuestBanner
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : GUEST_USER;
+    } catch {
+      return GUEST_USER;
+    }
+  });
+  const [isLoading, setIsLoading] = useState(() => {
+    // Если пользователь уже сохранён в localStorage — не показываем загрузку при монтировании
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return !saved;
+    } catch {
+      return true;
+    }
+  });
   /** true когда серверная сессия точно готова (или пользователь гость) */
   const [sessionReady, setSessionReady] = useState(false);
 
@@ -45,17 +61,21 @@ export function useTelegramAuth() {
       // Singleton restoreSession гарантирует единственный fetch за жизнь страницы.
       // После завершения просто разблокируем запросы — invalidateQueries уже сделан внутри restoreSession.
       if (parsedUser && !checkIsGuest(parsedUser)) {
-        restoreSession(parsedUser).finally(() => setSessionReady(true));
+        restoreSession(parsedUser).finally(() => {
+          setSessionReady(true);
+          setIsLoading(false);
+        });
       } else {
         // Гость — сразу разрешаем запросы
         setSessionReady(true);
+        setIsLoading(false);
       }
     } catch (e) {
       console.error('Ошибка загрузки пользователя из localStorage:', e);
       setUser(GUEST_USER);
       setSessionReady(true);
+      setIsLoading(false);
     }
-    setIsLoading(false);
 
     /**
      * Обрабатывает custom-событие смены авторизации

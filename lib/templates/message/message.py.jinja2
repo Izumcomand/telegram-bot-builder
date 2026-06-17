@@ -38,11 +38,26 @@
 {# Обработчик callback для навигации к узлу #}
 {# Если задан callbackPattern (customCallbackData) — декоратор слушает его, иначе nodeId #}
 {%- set _cb_pattern = callbackPattern if callbackPattern else nodeId %}
+{%- set _cb_is_dynamic = callbackPattern and '{' in callbackPattern %}
+{%- if _cb_is_dynamic %}
+{%- set _cb_static_prefix = callbackPattern.split('{')[0] %}
+@dp.callback_query(lambda c: c.data and c.data.startswith("{{ _cb_static_prefix }}"))
+{%- else %}
 @dp.callback_query(lambda c: c.data == "{{ _cb_pattern }}"{% if not callbackPattern %} or c.data.startswith("{{ nodeId }}_btn_"){% endif %})
+{%- endif %}
 async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.CallbackQuery, state: FSMContext = None):
     """Обработчик перехода к узлу {{ nodeId }}"""
     user_id = callback_query.from_user.id
     logging.info(f"🔵 Переход к узлу {{ nodeId }} для пользователя {user_id}")
+    {%- if _cb_is_dynamic %}
+    # Извлекаем динамическую часть callback_data (суффикс после статичного префикса)
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    _cb_suffix = (callback_query.data or "").replace("{{ _cb_static_prefix }}", "", 1)
+    if _cb_suffix:
+        user_data[user_id]["_cb_dynamic_id"] = _cb_suffix
+        await set_user_var(user_id, "_cb_dynamic_id", _cb_suffix)
+    {%- endif %}
     {# Лог нажатия кнопки пользователем #}
     _pressed_cb = getattr(callback_query, 'data', None)
     if _pressed_cb and not getattr(callback_query, '_is_fake', False):
@@ -103,33 +118,34 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
     last_name = callback_query.from_user.last_name
 
     {% if userDatabaseEnabled %}
-    # Сохраняем пользователя в базу данных
-    # Аватарку запрашиваем если: ещё не получали в этой сессии И в БД нет (avatar_url IS NULL)
-    _avatar_url = None
-    _has_avatar_in_memory = user_data.get(user_id, {}).get("_avatar_fetched")
-    _has_avatar_in_db = user_data.get(user_id, {}).get("_avatar_url_cached")
-    if not _has_avatar_in_memory and not _has_avatar_in_db:
-        try:
-            _photos = await bot.get_user_profile_photos(user_id, limit=1)
-            if _photos and _photos.photos:
-                # Сохраняем file_id — он постоянный, в отличие от file_path/URL
-                _avatar_url = _photos.photos[0][-1].file_id
-                user_data.setdefault(user_id, {})["_avatar_url_cached"] = _avatar_url
-                logging.info(f"✅ Аватарка (file_id) получена для {user_id}")
-            else:
-                logging.info(f"ℹ️ У пользователя {user_id} нет аватарки")
-            user_data.setdefault(user_id, {})["_avatar_fetched"] = True
-        except Exception as _e:
-            logging.warning(f"⚠️ Не удалось получить аватарку для {user_id}: {_e}")
-    elif _has_avatar_in_db:
-        _avatar_url = _has_avatar_in_db
-    # Fire-and-forget: сохранение профиля не блокирует отправку сообщения
-    # Передаём deep_link_param и referrer_id из user_data — они уже записаны set_user_var до вызова save_user_to_db
-    asyncio.create_task(save_user_to_db(
-        user_id, username, first_name, last_name, _avatar_url,
-        deep_link_param=user_data.get(user_id, {}).get("deep_link_param"),
-        referrer_id=user_data.get(user_id, {}).get("referrer_id"),
-    ))
+    # Сохраняем пользователя в базу данных (пропускаем системного пользователя id=0 от schedule_trigger)
+    if user_id != 0:
+        # Аватарку запрашиваем если: ещё не получали в этой сессии И в БД нет (avatar_url IS NULL)
+        _avatar_url = None
+        _has_avatar_in_memory = user_data.get(user_id, {}).get("_avatar_fetched")
+        _has_avatar_in_db = user_data.get(user_id, {}).get("_avatar_url_cached")
+        if not _has_avatar_in_memory and not _has_avatar_in_db:
+            try:
+                _photos = await bot.get_user_profile_photos(user_id, limit=1)
+                if _photos and _photos.photos:
+                    # Сохраняем file_id — он постоянный, в отличие от file_path/URL
+                    _avatar_url = _photos.photos[0][-1].file_id
+                    user_data.setdefault(user_id, {})["_avatar_url_cached"] = _avatar_url
+                    logging.info(f"✅ Аватарка (file_id) получена для {user_id}")
+                else:
+                    logging.info(f"ℹ️ У пользователя {user_id} нет аватарки")
+                user_data.setdefault(user_id, {})["_avatar_fetched"] = True
+            except Exception as _e:
+                logging.warning(f"⚠️ Не удалось получить аватарку для {user_id}: {_e}")
+        elif _has_avatar_in_db:
+            _avatar_url = _has_avatar_in_db
+        # Fire-and-forget: сохранение профиля не блокирует отправку сообщения
+        # deep_link_param/referrer_id — из user_data; без метки → direct для аналитики
+        asyncio.create_task(save_user_to_db(
+            user_id, username, first_name, last_name, _avatar_url,
+            deep_link_param=user_data.get(user_id, {}).get("deep_link_param") or "direct",
+            referrer_id=user_data.get(user_id, {}).get("referrer_id"),
+        ))
 
     # Инициализируем базовые переменные пользователя (память — синхронно)
     user_name = await init_user_variables(user_id, callback_query.from_user)
@@ -212,7 +228,11 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
     {%- endif %}
 
     {# Текст сообщения #}
+{%- if projectId %}
+    text = get_content("{{ nodeId }}", {{ messageText|format_python_text }})
+{%- else %}
     text = {{ messageText|format_python_text }}
+{%- endif %}
 
     {# Универсальная замена переменных #}
     all_user_vars = await init_all_user_vars(user_id)
@@ -252,7 +272,14 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
     {# Использует замыкание: text, keyboard и медиа-переменные доступны    #}
     {# из внешней области видимости обработчика.                           #}
     {# ------------------------------------------------------------------ #}
+    {%- if projectId %}
+    {# Динамическое определение parse_mode из текста (для горячей перезагрузки контента) #}
+    _parse_mode = "HTML" if any(tag in text for tag in ["<b>", "<i>", "<u>", "<s>", "<code>", "<pre>", "<a ", "<tg-spoiler>"]) else None
+    {%- set parse_mode_arg = ', parse_mode=_parse_mode' %}
+    {%- else %}
     {%- set parse_mode_arg = ', parse_mode="HTML"' if formatMode == 'html' else (', parse_mode="Markdown"' if formatMode == 'markdown' else '') %}
+    {%- endif %}
+    {%- set link_preview_arg = ', link_preview_options=types.LinkPreviewOptions(is_disabled=True)' if disableLinkPreview else '' %}
     {%- set effectiveKeyboard = 'ReplyKeyboardRemove()' if (hasHideAfterClickIncoming and keyboardType == 'none') else 'keyboard' %}
     async def _send_to_{{ nodeId|replace('-', '_') }}(_target_chat_id, _thread_id=None, _bot=None):
         """
@@ -271,7 +298,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
             image_path = get_upload_file_path("{{ imageUrl }}")
             if not os.path.exists(image_path):
                 logging.error(f"❌ Медиафайл не найден: {image_path} (узел {{ nodeId }})")
-                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
             _cached_fid = _media_file_id_cache.get("{{ imageUrl }}")
             if _cached_fid:
                 logging.info(f"📎 Узел {{ nodeId }}: отправка фото через in-memory file_id (без перегенерации)")
@@ -306,7 +333,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
                 return _sent_result
             else:
                 logging.warning(f"⚠️ Не удалось разрешить переменную imageUrl: {{ imageUrl | replace('{', '{{') | replace('}', '}}') }} (узел {{ nodeId }})")
-                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
 {%- else %}
 {%- set _cached_img_fid = (telegramFileIds or {})[imageUrl] if telegramFileIds and imageUrl in telegramFileIds else '' %}
 {%- if _cached_img_fid %}
@@ -359,7 +386,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
             video_path = get_upload_file_path("{{ videoUrl }}")
             if not os.path.exists(video_path):
                 logging.error(f"❌ Медиафайл не найден: {video_path} (узел {{ nodeId }})")
-                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
             _cached_fid = _media_file_id_cache.get("{{ videoUrl }}")
             if _cached_fid:
                 logging.info(f"📎 Узел {{ nodeId }}: отправка видео через in-memory file_id (без перегенерации)")
@@ -491,7 +518,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
             audio_path = get_upload_file_path("{{ audioUrl }}")
             if not os.path.exists(audio_path):
                 logging.error(f"❌ Медиафайл не найден: {audio_path} (узел {{ nodeId }})")
-                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
             _cached_fid = _media_file_id_cache.get("{{ audioUrl }}")
             if _cached_fid:
                 logging.info(f"📎 Узел {{ nodeId }}: отправка аудио через in-memory file_id (без перегенерации)")
@@ -557,7 +584,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
             doc_path = get_upload_file_path("{{ documentUrl }}")
             if not os.path.exists(doc_path):
                 logging.error(f"❌ Медиафайл не найден: {doc_path} (узел {{ nodeId }})")
-                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+                return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
             _cached_fid = _media_file_id_cache.get("{{ documentUrl }}")
             if _cached_fid:
                 logging.info(f"📎 Узел {{ nodeId }}: отправка документа через in-memory file_id (без перегенерации)")
@@ -665,7 +692,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
                 except Exception as _fe:
                     logging.error(f"❌ Узел {{ nodeId }}: ошибка отправки file-переменной: {_fe}")
 {%- endif %}
-            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
 {%- else %}
             {# Медиагруппа из нескольких элементов attachedMedia #}
             _mg_items = []
@@ -752,14 +779,14 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
                     return await _b.send_audio(_target_chat_id, _solo_media, caption=text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
                 else:
                     return await _b.send_document(_target_chat_id, _solo_media, caption=text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
-            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
 {%- endif %}
 {%- else %}
-            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
 {%- endif %}
 {%- endif %}
 {%- else %}
-            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
+            return await _b.send_message(_target_chat_id, text{{ parse_mode_arg }}{{ link_preview_arg }}, reply_markup={{ effectiveKeyboard }}, message_thread_id=_thread_id)
 {%- endif %}
         except Exception as _send_err:
             logging.error(f"❌ Ошибка отправки в {_target_chat_id}: {_send_err}")
@@ -811,7 +838,7 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
     # Отправка администраторам (получатель {{ loop.index }})
     for _admin_id in ADMIN_IDS:
         try:
-            await bot.send_message(_admin_id, text, reply_markup=keyboard)
+            await bot.send_message(_admin_id, text, reply_markup=keyboard{{ parse_mode_arg }})
             logging.info(f"📤 Сообщение отправлено администратору {_admin_id}")
         except Exception as _e_admin_{{ loop.index }}:
             logging.error(f"❌ Ошибка отправки администратору {_admin_id}: {_e_admin_{{ loop.index }}}")
@@ -826,6 +853,9 @@ async def handle_callback_{{ nodeId|replace('-', '_') }}(callback_query: types.C
         await set_user_var(user_id, "{{ saveMessageIdTo }}", sent_message.message_id)
         logging.info(f"💾 ID сообщения сохранён в переменную '{{ saveMessageIdTo }}': {sent_message.message_id}")
     {%- endif %}
+    # Системная переменная: ID последнего отправленного сообщения бота (для edit/delete)
+    if sent_message and hasattr(sent_message, 'message_id'):
+        user_data[user_id]["_last_sent_msg_id"] = str(sent_message.message_id)
 
     {# Лог отправленных кнопок #}
     {%- if buttons and buttons|length > 0 and keyboardType == 'inline' %}

@@ -42,6 +42,10 @@ export const broadcasts = pgTable("broadcasts", {
   finishedAt: timestamp("finished_at", { withTimezone: true }),
   /** URL медиафайлов для отправки вместе с сообщением */
   mediaUrls: json("media_urls").$type<string[]>().default([]),
+  /** Инлайн-кнопки сообщения рассылки */
+  buttons: json("buttons").$type<any[]>().default([]),
+  /** Кол-во кнопок в ряду (0 = все в один ряд) */
+  buttonsPerRow: integer("buttons_per_row").default(0),
 });
 
 /**
@@ -58,6 +62,8 @@ export const broadcastResults = pgTable("broadcast_results", {
   status: text("status").notNull(),
   /** Описание ошибки от Telegram (если есть) */
   errorMessage: text("error_message"),
+  /** ID сообщения в Telegram (для удаления/редактирования) */
+  telegramMessageId: integer("telegram_message_id"),
   /** Дата отправки */
   sentAt: timestamp("sent_at", { withTimezone: true }).defaultNow(),
 });
@@ -74,6 +80,10 @@ export const broadcastFiltersSchema = z.object({
   activeFrom: z.string().optional(),
   /** Последняя активность до (ISO) */
   activeTo: z.string().optional(),
+  /** Массив userId выбранных вручную пользователей */
+  userIds: z.array(z.string()).optional(),
+  /** Массив groupId (Telegram chat_id) выбранных групп */
+  groupIds: z.array(z.string()).optional(),
 });
 
 /** Схема вставки рассылки */
@@ -88,6 +98,10 @@ export const insertBroadcastSchema = z.object({
   messageText: z.string().min(1),
   /** URL медиафайлов для отправки */
   mediaUrls: z.array(z.string()).default([]),
+  /** Инлайн-кнопки сообщения рассылки */
+  buttons: z.array(z.any()).default([]),
+  /** Кол-во кнопок в ряду (0 = все в один ряд) */
+  buttonsPerRow: z.number().int().min(0).default(0),
   /** Фильтры аудитории */
   filters: broadcastFiltersSchema.default({}),
   /** Статус рассылки */
@@ -104,6 +118,8 @@ export const insertBroadcastResultSchema = z.object({
   status: z.enum(["sent", "failed", "blocked", "not_found"]),
   /** Описание ошибки */
   errorMessage: z.string().nullable().optional(),
+  /** ID сообщения в Telegram (для удаления/редактирования) */
+  telegramMessageId: z.number().int().nullable().optional(),
 });
 
 /** Тип записи рассылки */

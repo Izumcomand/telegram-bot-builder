@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { BarChart2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { TabHeader } from '@/components/ui/tab-header';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStats } from '@/components/editor/database/user-database/hooks/queries/use-stats';
 import { useGrowth, GrowthGranularity } from '@/components/editor/database/user-database/hooks/queries/use-growth';
@@ -19,6 +20,7 @@ import { GrowthGranularitySelector } from '@/components/editor/database/user-dat
 import { ChartModeToggle, ChartMode } from '@/components/editor/database/user-database/components/stats/chart-mode-toggle';
 import { ChartTypeToggle, ChartType } from '@/components/editor/database/user-database/components/stats/chart-type-toggle';
 import { SourceModeToggle, SourceMode } from '@/components/editor/database/user-database/components/stats/source-mode-toggle';
+import { ActivitySplitToggle, ActivitySplitMode } from '@/components/editor/database/user-database/components/stats/activity-split-toggle';
 import { aggregateTopSources } from '@/components/editor/database/user-database/components/stats/source-aggregation-utils';
 import { BotTokenSelector } from '@/components/editor/database/user-database/components/header/bot-token-selector';
 import { useProjectTokens } from '@/hooks/use-project-tokens';
@@ -75,6 +77,8 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
   const [activityChartType, setActivityChartType] = useState<ChartType>('line');
   /** Режим отображения источников: общий или по источникам */
   const [sourceMode, setSourceMode] = useState<SourceMode>('total');
+  /** Режим отображения активности: все сообщения / входящие+исходящие */
+  const [activitySplitMode, setActivitySplitMode] = useState<ActivitySplitMode>('total');
 
   /** Токены проекта для селектора бота */
   const projectTokensInfo = useProjectTokens([projectId]);
@@ -111,7 +115,13 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
   const { points: growthPoints, weeklyGrowth } = useGrowth({ projectId, selectedTokenId, granularity: growthGranularity });
   const { points: sourcePoints } = useGrowthBySource({ projectId, selectedTokenId, granularity: growthGranularity });
   const { languages, sources } = useTraffic({ projectId, selectedTokenId });
-  const { points: messagePoints, weeklyMessages } = useMessagesActivity({ projectId, selectedTokenId, granularity: msgGranularity });
+  const { points: messagePoints, outgoingPoints, weeklyMessages } = useMessagesActivity({ projectId, selectedTokenId, granularity: msgGranularity, split: activitySplitMode === 'split' });
+
+  /** Multi-line данные для графика активности: входящие + исходящие (только в режиме split) */
+  const activityMultiLine = activitySplitMode === 'split' ? [
+    { name: 'Входящие', data: messagePoints, color: '#10b981' },
+    { name: 'Исходящие', data: outgoingPoints, color: '#6366f1' },
+  ] : undefined;
 
   const total = stats.totalUsers ?? 0;
   const growthTrend = weeklyGrowth > 0 ? 'up' : weeklyGrowth < 0 ? 'down' : 'neutral';
@@ -130,37 +140,31 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
   return (
     <div className="flex flex-col h-full bg-background">
       {/* Шапка */}
-      <div className="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-muted/40 to-background">
-        <div className="flex items-center gap-2.5">
-          <div className="rounded-lg bg-primary/10 p-2">
-            <BarChart2 className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h2 className="text-base font-semibold leading-none">Аналитика</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">Статистика и рост аудитории</p>
-          </div>
-          {tokens.length > 0 && (
-            <BotTokenSelector
-              tokens={tokens}
-              selectedTokenId={selectedTokenId ?? null}
-              onSelect={(id) => onSelectToken?.(id)}
-            />
-          )}
-          {allProjects && allProjects.length > 1 && onProjectChange && (
-            <ProjectSelector
-              projects={allProjects}
-              selectedProjectId={projectId}
-              onSelect={(id) => { onSelectToken?.(null); onProjectChange(id); }}
-            />
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+      <TabHeader
+        icon={<BarChart2 className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
+        title="Аналитика"
+        actions={
           <Button size="sm" variant="outline" className="gap-1.5" onClick={() => refetchStats()}>
             <RefreshCw className="h-4 w-4" />
-            Обновить
+            <span className="hidden sm:inline">Обновить</span>
           </Button>
-        </div>
-      </div>
+        }
+      >
+        {allProjects && allProjects.length > 1 && onProjectChange && (
+          <ProjectSelector
+            projects={allProjects}
+            selectedProjectId={projectId}
+            onSelect={(id) => { onSelectToken?.(null); onProjectChange(id); }}
+          />
+        )}
+        {tokens.length > 0 && (
+          <BotTokenSelector
+            tokens={tokens}
+            selectedTokenId={selectedTokenId ?? null}
+            onSelect={(id) => onSelectToken?.(id)}
+          />
+        )}
+      </TabHeader>
 
       {/* Контент */}
       <ScrollArea className="flex-1">
@@ -190,10 +194,12 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
             <StatMetricCard
               title="Активность"
               value={stats.totalInteractions}
-              sparklineData={messagePoints}
+              sparklineData={activitySplitMode === 'total' ? messagePoints : undefined}
+              multiLineData={activityMultiLine}
               lineColor="#10b981"
               gradientId="analyticsActivity"
-              subtitle={stats.avgInteractionsPerUser !== undefined ? `~${stats.avgInteractionsPerUser.toFixed(1)} среднее` : undefined}
+              subtitle={weeklyMessages > 0 ? `+${weeklyMessages} за неделю` : undefined}
+              secondarySubtitle={stats.avgInteractionsPerUser !== undefined ? `~${stats.avgInteractionsPerUser.toFixed(1)} среднее` : undefined}
               trend={weeklyMessages > 0 ? 'up' : 'neutral'}
               cumulative={activityMode === 'cumulative'}
               chartGranularity={msgGranularity}
@@ -204,6 +210,7 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
                   <ActivityGranularitySelector value={msgGranularity} onChange={setMsgGranularity} />
                   <ChartModeToggle value={activityMode} onChange={setActivityMode} />
                   <ChartTypeToggle value={activityChartType} onChange={setActivityChartType} />
+                  <ActivitySplitToggle value={activitySplitMode} onChange={setActivitySplitMode} />
                 </div>
               }
             />
@@ -215,7 +222,7 @@ export function AnalyticsPanel({ projectId, selectedTokenId, onSelectToken, allP
               projectId={projectId}
               selectedTokenId={selectedTokenId}
             />
-            <StatDonutCard title="Источники трафика" items={sourceItems} className="h-full" />
+            <StatDonutCard title="Источники трафика" items={sourceItems} maxItems={null} className="h-full" />
           </div>
 
           {/* Строка 3: Premium + языки */}

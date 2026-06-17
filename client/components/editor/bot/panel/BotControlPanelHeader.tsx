@@ -1,60 +1,66 @@
 /**
  * @fileoverview Заголовок панели управления ботами
- *
- * Компонент отображает заголовок с иконкой и кнопку подключения бота.
- * Заголовок использует text-foreground (светлый), кнопка — сдержанный outline-стиль.
- *
+ * @description Компактный заголовок с иконкой, переключателем проекта и кнопкой подключения бота
  * @module BotControlPanelHeader
  */
 
 import { Button } from '@/components/ui/button';
 import { Bot, Plus } from 'lucide-react';
+import { TabHeader } from '@/components/ui/tab-header';
 import { useTelegramAuth } from '@/components/editor/header/hooks/use-telegram-auth';
 import { isGuest } from '@/types/telegram-user';
+import { ProjectSelector } from '@/components/editor/database/user-database/components/header/project-selector';
+import { WorkerPoolStatus } from './WorkerPoolStatus';
 
 /** Свойства заголовка панели управления ботами */
 interface BotControlPanelHeaderProps {
   /** Обработчик нажатия кнопки подключения бота */
   onConnectBot: () => void;
+  /** Список всех проектов для переключателя */
+  allProjects?: Array<{ id: number; name: string }>;
+  /** ID текущего проекта */
+  currentProjectId?: number;
+  /** Обработчик смены проекта */
+  onProjectChange?: (projectId: number) => void;
 }
 
 /**
- * Заголовок панели управления ботами
+ * Компактный заголовок панели управления ботами
+ * @param props - Свойства компонента
+ * @returns JSX элемент заголовка
  */
-export function BotControlPanelHeader({ onConnectBot }: BotControlPanelHeaderProps) {
-  const { user } = useTelegramAuth();
-  const isGuestUser = !user || isGuest(user);
+export function BotControlPanelHeader({ onConnectBot, allProjects, currentProjectId, onProjectChange }: BotControlPanelHeaderProps) {
+  const { user, isLoading: authLoading } = useTelegramAuth();
+  const isGuestUser = !authLoading && (!user || isGuest(user));
 
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-blue-600/15 dark:bg-blue-500/20 flex items-center justify-center flex-shrink-0">
-            <Bot className="w-4 h-4 sm:w-5 sm:h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <h2 className="text-xl sm:text-2xl lg:text-3xl xl:text-4xl font-bold text-foreground leading-tight">
-              Боты
-            </h2>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              Управление ботами из всех проектов
-            </p>
-          </div>
-        </div>
-      </div>
-      {!isGuestUser && (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <Button
-            variant="outline"
-            onClick={onConnectBot}
-            className="flex items-center justify-center sm:justify-start gap-2 w-full sm:w-auto border-border hover:bg-accent h-9 px-3 sm:px-4 text-sm"
-            data-testid="button-connect-bot"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Подключить бот</span>
-          </Button>
-        </div>
+    <TabHeader
+      icon={<Bot className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />}
+      title="Боты"
+      actions={
+        <>
+          {!isGuestUser && (
+            <Button
+              variant="outline"
+              onClick={onConnectBot}
+              className="gap-1.5 h-7 sm:h-8 px-2 sm:px-3 text-xs sm:text-sm flex-shrink-0"
+              data-testid="button-connect-bot"
+            >
+              <Plus className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              <span className="hidden sm:inline">Подключить бот</span>
+            </Button>
+          )}
+          <WorkerPoolStatus />
+        </>
+      }
+    >
+      {allProjects && allProjects.length > 1 && onProjectChange && currentProjectId && (
+        <ProjectSelector
+          projects={allProjects}
+          selectedProjectId={currentProjectId}
+          onSelect={onProjectChange}
+        />
       )}
-    </div>
+    </TabHeader>
   );
 }

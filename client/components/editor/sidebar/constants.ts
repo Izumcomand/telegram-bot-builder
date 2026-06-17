@@ -9,18 +9,21 @@ import { textMessage, mediaMessage, keyboardMessage, saveAnswerNode } from './ma
 import { allCommandPresets } from './massive/commands';
 import type { CommandPreset } from './massive/commands';
 import { broadcastNode } from '@/components/editor/canvas/canvas-node/broadcast-node';
-import { commandTrigger, textTrigger, anyMessageTrigger, groupMessageTrigger, callbackTrigger, incomingCallbackTrigger, outgoingMessageTrigger, managedBotUpdatedTrigger } from './massive/triggers';
-import { conditionNode, setVariableNode } from './massive/logic';
-import { forwardMessage, createForumTopicNode } from './massive/content-management';
+import { commandTrigger, textTrigger, anyMessageTrigger, groupMessageTrigger, callbackTrigger, incomingCallbackTrigger, outgoingMessageTrigger, managedBotUpdatedTrigger, scheduleTrigger } from './massive/triggers';
+import { conditionNode, setVariableNode, loopNode, delayNode, parallelSplitNode } from './massive/logic';
+import { forwardMessage, createForumTopicNode, deleteMessage } from './massive/content-management';
 import { httpRequestNode } from './massive/http-request';
 import { psqlQueryNode } from './massive/psql-query';
+import { botTableNode } from './massive/bot-table';
 import { convertFileNode } from './massive/convert-file';
 import { getManagedBotTokenNode } from './massive/managed-bots';
 import { answerCallbackQueryNode, editMessageNode } from './massive/actions';
+import { userbotMessage, userbotClickButton, userbotInlineQuery, userbotEditTrigger } from './massive/userbot';
+import { kickUser } from './massive/user-management';
 
 /**
  * Группировка компонентов по категориям для удобной навигации
- * Разделяет компоненты на логические группы в интерфейсе
+ * Триггеры распределены по категориям в соответствии с контекстом использования
  */
 export const componentCategories: Array<{
   /** Название категории */
@@ -29,36 +32,28 @@ export const componentCategories: Array<{
   components: ComponentDefinition[];
 }> = [
   {
-    title: 'Триггеры',
-    components: [commandTrigger, textTrigger, anyMessageTrigger, groupMessageTrigger, callbackTrigger, incomingCallbackTrigger, outgoingMessageTrigger, managedBotUpdatedTrigger]
-  },
-  {
     title: 'Сообщения',
-    components: [textMessage, mediaMessage, keyboardMessage]
+    components: [commandTrigger, textTrigger, anyMessageTrigger, outgoingMessageTrigger, textMessage, mediaMessage, saveAnswerNode, editMessageNode, deleteMessage, forwardMessage]
   },
   {
-    title: 'Ввод',
-    components: [saveAnswerNode]
+    title: 'Клавиатура',
+    components: [callbackTrigger, incomingCallbackTrigger, keyboardMessage, answerCallbackQueryNode]
   },
   {
-    title: 'Рассылка',
-    components: [broadcastNode]
+    title: 'Группы',
+    components: [groupMessageTrigger, createForumTopicNode, kickUser]
   },
   {
-    title: 'Логика',
-    components: [conditionNode, setVariableNode]
-  },
-  {
-    title: 'Управление контентом',
-    components: [forwardMessage, createForumTopicNode, editMessageNode]
+    title: 'Автоматизация',
+    components: [scheduleTrigger]
   },
   {
     title: 'Интеграции',
-    components: [httpRequestNode, psqlQueryNode, convertFileNode, answerCallbackQueryNode]
+    components: [httpRequestNode, psqlQueryNode, botTableNode, convertFileNode, conditionNode, setVariableNode, loopNode, delayNode, parallelSplitNode]
   },
   {
-    title: 'Управление ботами',
-    components: [getManagedBotTokenNode]
+    title: 'Юзербот',
+    components: [userbotMessage, userbotClickButton, userbotInlineQuery, userbotEditTrigger]
   }
 ];
 

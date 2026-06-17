@@ -17,6 +17,8 @@ export const messageParamsSchema = z.object({
   messageText: z.string().optional().default(''),
   /** Режим форматирования */
   formatMode: z.string().optional().transform(v => (['html', 'markdown', 'none'].includes(v as string) ? v : 'none') as 'html' | 'markdown' | 'none').default('none'),
+  /** Отключить превью ссылок */
+  disableLinkPreview: z.boolean().optional().default(false),
 
   // --- Доступ ---
   /** Только администраторы */
@@ -41,6 +43,8 @@ export const messageParamsSchema = z.object({
   oneTimeKeyboard: z.boolean().optional().default(false),
   /** Изменить размер клавиатуры под кнопки */
   resizeKeyboard: z.boolean().optional(),
+  /** Перемешивать порядок inline-кнопок при каждом показе */
+  shuffleButtons: z.boolean().optional().default(false),
 
   // --- Множественный выбор ---
   /** Разрешить множественный выбор */
@@ -128,6 +132,8 @@ export const messageParamsSchema = z.object({
   // --- Служебные ---
   /** Есть ли входящие кнопки с hideAfterClick=true, ведущие к этому узлу */
   hasHideAfterClickIncoming: z.boolean().optional().default(false),
+  /** ID проекта для поддержки get_content (горячая перезагрузка контента) */
+  projectId: z.number().nullable().optional().default(null),
   /** Имя переменной для сохранения ID отправленного сообщения */
   saveMessageIdTo: z.string().optional(),
 

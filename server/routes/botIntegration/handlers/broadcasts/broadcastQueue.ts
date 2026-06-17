@@ -7,8 +7,10 @@ import { storage } from "../../../../storages/storage";
 import { broadcastProjectEvent } from "../../../../terminal/broadcastProjectEvent";
 import { replaceVariablesInText } from "../messages/replace-variables";
 import { sendTelegramMessage } from "../messages/send-telegram-message";
+import { buildMediaFiles } from "../messages/build-media-files";
+import { extractButtonsFromNode } from "../messages/extract-buttons";
+import type { InlineButton } from "../messages/extract-buttons";
 import type { SendMediaFile } from "../messages/extract-media";
-import type { UserBotData } from "@shared/schema";
 
 /** Размер батча пользователей для обработки */
 const BATCH_SIZE = 100;
@@ -41,6 +43,8 @@ function sleep(ms: number): Promise<void> {
  * @param userId - Telegram user_id получателя
  * @param text - Текст сообщения (HTML)
  * @param mediaFiles - Медиафайлы для отправки
+ * @param buttons - Инлайн-кнопки сообщения
+ * @param buttonsPerRow - Кол-во кнопок в ряду (0 = все в один ряд)
  * @returns Объект с результатом: ok, retryAfter (при 429), errorCode
  */
 async function sendBroadcastMessage(
@@ -48,10 +52,13 @@ async function sendBroadcastMessage(
   userId: string,
   text: string,
   mediaFiles: SendMediaFile[],
-): Promise<{ ok: boolean; retryAfter?: number; errorCode?: number; description?: string }> {
+  buttons: InlineButton[],
+  buttonsPerRow: number,
+): Promise<{ ok: boolean; messageId?: number; retryAfter?: number; errorCode?: number; description?: string }> {
   try {
-    const result = await sendTelegramMessage(token, userId, text, mediaFiles, [], true) as {
+    const result = await sendTelegramMessage(token, userId, text, mediaFiles, buttons, true, buttonsPerRow) as {
       ok?: boolean;
+      result?: { message_id?: number };
       error_code?: number;
       description?: string;
       parameters?: { retry_after?: number };
@@ -67,7 +74,7 @@ async function sendBroadcastMessage(
       };
     }
 
-    return { ok: true };
+    return { ok: true, messageId: result?.result?.message_id ?? undefined };
   } catch (error: unknown) {
     // Сетевая ошибка (timeout, DNS и т.д.)
     const err = error as Record<string, unknown>;
@@ -77,63 +84,6 @@ async function sendBroadcastMessage(
       description: typeof err?.message === "string" ? err.message : "Сетевая ошибка",
     };
   }
-}
-
-/**
- * Преобразует массив URL медиафайлов в формат SendMediaFile для sendTelegramMessage.
- * Поддерживает три формата:
- * - обычный URL (/uploads/...) — тип определяется по расширению
- * - JSON file_id запись {"__type":"file_id","mediaType":"...","fileIdsByToken":{...}} — берётся первый доступный file_id
- * - прямой Telegram file_id (строка без протокола и без JSON) — передаётся как есть
- * @param mediaUrls - Массив URL медиафайлов
- * @param tokenId - ID токена бота для выбора нужного file_id из маппинга
- * @returns Массив SendMediaFile
- */
-function buildMediaFiles(mediaUrls: string[], tokenId: number): SendMediaFile[] {
-  const result: SendMediaFile[] = [];
-
-  for (let i = 0; i < mediaUrls.length; i++) {
-    const url = mediaUrls[i];
-
-    // Формат JSON file_id: {"__type":"file_id","mediaType":"photo","fileIdsByToken":{"42":"AgAC..."}}
-    if (url.startsWith('{"__type":"file_id"')) {
-      try {
-        const parsed = JSON.parse(url) as {
-          __type: string;
-          mediaType?: string;
-          fileIdsByToken?: Record<string, string>;
-        };
-        const fileIdsByToken = parsed.fileIdsByToken ?? {};
-        // Сначала ищем file_id для текущего токена, затем берём первый доступный
-        const fileId = fileIdsByToken[String(tokenId)]
-          ?? Object.values(fileIdsByToken)[0];
-
-        if (fileId) {
-          result.push({ id: i, url: fileId, type: parsed.mediaType ?? 'photo' });
-        }
-      } catch {
-        console.warn(`[broadcastQueue] Не удалось распарсить file_id запись: ${url.slice(0, 80)}`);
-      }
-      continue;
-    }
-
-    result.push({ id: i, url, type: resolveMediaType(url) });
-  }
-
-  return result;
-}
-
-/**
- * Определяет тип медиа по расширению URL
- * @param url - URL файла
- * @returns Тип медиа для Telegram API
- */
-function resolveMediaType(url: string): string {
-  const ext = url.split('.').pop()?.toLowerCase() ?? '';
-  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'photo';
-  if (['mp4', 'avi', 'mov', 'webm'].includes(ext)) return 'video';
-  if (['mp3', 'wav', 'ogg', 'm4a'].includes(ext)) return 'audio';
-  return 'document';
 }
 
 /**
@@ -195,6 +145,11 @@ export async function runBroadcastQueue(broadcastId: number, token: string): Pro
     const { projectId, tokenId, messageText, filters } = broadcast;
     // Медиафайлы из поля mediaUrls рассылки — tokenId нужен для выбора правильного file_id
     const mediaFiles = buildMediaFiles((broadcast.mediaUrls as string[]) ?? [], tokenId);
+    // Инлайн-кнопки рассылки: сырой массив из БД и преобразование в формат Telegram
+    const rawButtons = (broadcast.buttons as any[]) ?? [];
+    const inlineButtons = extractButtonsFromNode({ buttons: rawButtons });
+    /** Кол-во кнопок в ряду (0 = все в один ряд) */
+    const buttonsPerRow = (broadcast.buttonsPerRow as number) ?? 0;
 
     const users = await storage.getUsersForBroadcast(projectId, tokenId, filters as Parameters<typeof storage.getUsersForBroadcast>[2]);
 
@@ -209,7 +164,7 @@ export async function runBroadcastQueue(broadcastId: number, token: string): Pro
       // Проверяем флаг остановки перед каждым батчем
       if (activeBroadcasts.get(broadcastId) === "stopped") break;
 
-      const batch: UserBotData[] = users.slice(i, i + BATCH_SIZE);
+      const batch: any[] = users.slice(i, i + BATCH_SIZE);
 
       for (const user of batch) {
         // Проверяем флаг остановки внутри батча
@@ -229,12 +184,12 @@ export async function runBroadcastQueue(broadcastId: number, token: string): Pro
         let sent = false;
 
         while (retries < 3 && !sent) {
-          const result = await sendBroadcastMessage(token, user.userId, text, mediaFiles);
+          const result = await sendBroadcastMessage(token, user.userId, text, mediaFiles, inlineButtons, buttonsPerRow);
 
           if (result.ok) {
             deliveredCount++;
             sentCount++;
-            await storage.createBroadcastResult({ broadcastId, userId: user.userId, status: "sent" });
+            await storage.createBroadcastResult({ broadcastId, userId: user.userId, status: "sent", telegramMessageId: result.messageId ?? null });
             // Записываем сообщение в историю диалога чтобы оно было видно в панели диалога
             await storage.createBotMessage({
               projectId,
@@ -249,7 +204,25 @@ export async function runBroadcastQueue(broadcastId: number, token: string): Pro
                 ...(mediaFiles.length > 0
                   ? { broadcastMediaUrl: mediaFiles[0].url, broadcastMediaType: mediaFiles[0].type }
                   : {}),
+                // Инлайн-кнопки для отображения в истории диалога
+                ...(rawButtons.length > 0 ? { buttons: rawButtons } : {}),
               },
+            });
+            // Публикуем WS-событие чтобы диалог и список обновились в реальном времени
+            await broadcastProjectEvent(projectId, {
+              type: "new-message",
+              projectId,
+              tokenId,
+              data: {
+                id: 0,
+                userId: user.userId,
+                messageType: "bot",
+                messageText: text,
+                messageData: { sentFromBroadcast: true, broadcastId },
+                nodeId: null,
+                createdAt: new Date().toISOString(),
+              },
+              timestamp: new Date().toISOString(),
             });
             sent = true;
           } else if (result.errorCode === 429 && result.retryAfter) {
@@ -284,6 +257,62 @@ export async function runBroadcastQueue(broadcastId: number, token: string): Pro
       const isLastBatch = i + BATCH_SIZE >= users.length;
       if (!isLastBatch || isStopped) {
         await emitProgress(projectId, broadcastId, sentCount, deliveredCount, failedCount, users.length, isStopped ? "stopped" : "running");
+      }
+    }
+
+    // Отправка в выбранные группы (текст + медиа)
+    const groupIds = (broadcast.filters as Record<string, unknown>)?.groupIds as string[] | undefined;
+    if (groupIds && groupIds.length > 0 && activeBroadcasts.get(broadcastId) !== "stopped") {
+      for (const groupId of groupIds) {
+        try {
+          const groupResult = await sendTelegramMessage(token, groupId, broadcast.messageText, mediaFiles, inlineButtons, true, buttonsPerRow) as {
+            ok?: boolean;
+            result?: { message_id?: number };
+          };
+          const groupMsgId = groupResult?.result?.message_id ?? null;
+          // Сохраняем результат с telegram_message_id для возможности редактирования/удаления
+          await storage.createBroadcastResult({
+            broadcastId,
+            userId: groupId,
+            status: "sent",
+            telegramMessageId: groupMsgId,
+          });
+          // Записываем сообщение в историю группового диалога
+          await storage.createBotMessage({
+            projectId,
+            tokenId,
+            userId: groupId,
+            chatId: groupId,
+            messageType: "bot",
+            messageText: broadcast.messageText,
+            messageData: {
+              sentFromBroadcast: true,
+              broadcastId,
+              chatId: groupId,
+              // Инлайн-кнопки для отображения в истории группового диалога
+              ...(rawButtons.length > 0 ? { buttons: rawButtons } : {}),
+            },
+          });
+          // Публикуем WS-событие чтобы диалог группы обновился
+          await broadcastProjectEvent(projectId, {
+            type: "new-message",
+            projectId,
+            tokenId,
+            data: {
+              id: 0,
+              userId: groupId,
+              chatId: groupId,
+              messageType: "bot",
+              messageText: broadcast.messageText,
+              messageData: { sentFromBroadcast: true, broadcastId },
+              nodeId: null,
+              createdAt: new Date().toISOString(),
+            },
+            timestamp: new Date().toISOString(),
+          });
+        } catch (err) {
+          console.error(`[broadcastQueue] Ошибка отправки в группу ${groupId}:`, err);
+        }
       }
     }
 

@@ -34,6 +34,8 @@ interface BotLogLevelSelectProps {
   tokenId: number;
   /** Текущий уровень логирования */
   logLevel: string | null;
+  /** Колбэк для pending (если передан — не сохраняет мгновенно) */
+  onPendingChange?: (key: string, value: string) => void;
 }
 
 /**
@@ -56,7 +58,7 @@ async function updateLogLevel(projectId: number, tokenId: number, logLevel: stri
  * @param props - Свойства компонента
  * @returns JSX элемент
  */
-export function BotLogLevelSelect({ projectId, tokenId, logLevel }: BotLogLevelSelectProps) {
+export function BotLogLevelSelect({ projectId, tokenId, logLevel, onPendingChange }: BotLogLevelSelectProps) {
   const [localLevel, setLocalLevel] = useState<LogLevel>((logLevel as LogLevel) ?? 'WARNING');
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -77,25 +79,31 @@ export function BotLogLevelSelect({ projectId, tokenId, logLevel }: BotLogLevelS
 
   return (
     <div className="flex flex-col gap-2 p-2.5 sm:p-3 rounded-lg border bg-muted/40 border-border/50 transition-all">
-      <div className="flex items-center gap-2 sm:gap-3">
-        <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
-        <div className="flex-1 min-w-0">
-          <span className="text-xs sm:text-sm font-semibold text-muted-foreground block">
-            Уровень логирования
-          </span>
-          <p className="text-xs text-muted-foreground/70 mt-0.5">
-            Детализация вывода в терминал
-          </p>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0">
+          <FileText className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <span className="text-xs sm:text-sm font-semibold text-muted-foreground block">
+              Уровень логирования
+            </span>
+            <p className="text-xs text-muted-foreground/70 mt-0.5">
+              Детализация вывода в терминал
+            </p>
+          </div>
         </div>
         <Select
           value={localLevel}
           onValueChange={(val) => {
             setLocalLevel(val as LogLevel);
-            mutation.mutate(val);
+            if (onPendingChange) {
+              onPendingChange('LOG_LEVEL', val);
+            } else {
+              mutation.mutate(val);
+            }
           }}
           disabled={mutation.isPending}
         >
-          <SelectTrigger className="h-7 w-36 text-xs">
+          <SelectTrigger className="h-7 w-full sm:w-36 text-xs">
             <SelectValue placeholder="Уровень" />
           </SelectTrigger>
           <SelectContent>

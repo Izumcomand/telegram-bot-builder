@@ -24,7 +24,11 @@ export type EditorTab =
   | 'groups'
   | 'export'
   | 'preview'
-  | 'analytics';
+  | 'dialogs'
+  | 'broadcast'
+  | 'analytics'
+  | 'tables'
+  | 'files';
 
 /**
  * Тип предыдущей вкладки

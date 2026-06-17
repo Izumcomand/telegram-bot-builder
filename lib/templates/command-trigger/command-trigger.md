@@ -16,7 +16,6 @@
 | command | string | Команда, например "/start" | ✅ |
 | description | string | Описание команды для BotFather | нет |
 | showInMenu | boolean | Показывать команду в меню бота | нет |
-| isPrivateOnly | boolean | Только приватные чаты | нет |
 | targetNodeId | string | ID целевого узла | ✅ |
 | targetNodeType | string | Тип целевого узла | ✅ |
 
@@ -28,7 +27,9 @@
 2. Если `args.startswith("ref_")` — парсится `referrer_id = args[4:]` и тоже сохраняется
 3. При прямом `/start` (без параметра) — `deep_link_param = "direct"` сохраняется в `start_command_handler`
 
-Оба поля передаются в `save_user_to_db` через middleware и не перезаписываются при повторных визитах.
+Оба поля передаются в `save_user_to_db` через `message_logging_middleware` **после** handler.
+Колонки `bot_users.deep_link_param` / `referrer_id` дополнительно пишет `sync_user_attribution_to_db`
+из `set_user_var` сразу после `/start` (до save_user_to_db). Не перезаписываются при повторных визитах.
 
 ## Пример входных данных (Node[])
 
@@ -81,18 +82,6 @@ async def command_trigger_trigger_start_handler(message: types.Message):
 
     mock_callback = MockCallback("msg_welcome", message.from_user, message)
     await handle_callback_msg_welcome(mock_callback)
-```
-
-### С isPrivateOnly
-
-```python
-@dp.message(Command("secret"))
-async def command_trigger_trigger_secret_handler(message: types.Message):
-    ...
-    if message.chat.type != 'private':
-        await message.answer("❌ Эта команда доступна только в приватных чатах")
-        return
-    ...
 ```
 
 ## Использование

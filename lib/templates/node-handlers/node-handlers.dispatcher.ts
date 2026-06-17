@@ -33,16 +33,27 @@ import { generateIncomingMessageTriggerHandlers } from '../incoming-message-trig
 import { generateIncomingCallbackTriggerHandlers } from '../incoming-callback-trigger/incoming-callback-trigger.renderer';
 import { generateOutgoingMessageTriggerHandlers } from '../outgoing-message-trigger/outgoing-message-trigger.renderer';
 import { generateManagedBotUpdatedTriggerHandlers } from '../managed-bot-updated-trigger/managed-bot-updated-trigger.renderer';
-import { generateAnswerCallbackQuery } from '../answer-callback-query/answer-callback-query.renderer';
+import { generateScheduleTriggerHandlers } from '../schedule-trigger/schedule-trigger.renderer';
+import { generateAnswerCallbackQuery, generateAnswerCallbackQueryHandlers } from '../answer-callback-query/answer-callback-query.renderer';
 import { generateEditMessageHandlers } from '../edit-message';
+import { generateDeleteMessageHandlers } from '../delete-message';
+import { generateKickUserHandlers } from '../kick-user/kick-user.renderer';
 import { generateSetVariableHandlers } from '../set-variable/set-variable.renderer';
 import { generatePsqlQueryHandlers } from '../psql-query/psql-query.renderer';
+import { generateBotTableHandlers } from '../bot-table';
 import { generateConvertFileHandlers } from '../convert-file/convert-file.renderer';
+import { generateLoopHandlers } from '../loop';
+import { generateParallelSplitHandlers } from '../parallel-split';
+import { generateDelayHandlers } from '../delay/delay.renderer';
 import { generateGetManagedBotToken } from '../get-managed-bot-token/get-managed-bot-token.renderer';
 import { generateGroupMessageTriggerHandlers } from '../group-message-trigger';
 import { generateConditionHandlers } from '../condition/condition.renderer';
 import { generateMediaNode } from '../media-node';
 import { generateUserInputNodeHandler } from '../user-input';
+import { generateUserbotMessageHandlers } from '../userbot-message/userbot-message.renderer';
+import { generateUserbotClickButtonHandlers } from '../userbot-click-button/userbot-click-button.renderer';
+import { generateUserbotInlineQueryHandlers } from '../userbot-inline-query/userbot-inline-query.renderer';
+import { generateUserbotEditTriggerHandlers } from '../userbot-edit-trigger/userbot-edit-trigger.renderer';
 import type { KeyboardLayout } from '../types/keyboard-layout';
 import type { DynamicButtonsConfig } from '../keyboard/dynamic-buttons';
 import type { MessageTemplateParams } from '../message/message.params';
@@ -117,29 +128,85 @@ function getSafeAutoTransitionParams(node: Node, nodes: Node[]): {
 }
 
 /**
- * Генерирует безопасный no-op обработчик для keyboard-ноды.
- *
- * Keyboard-нода в новой модели используется только как отдельный узел привязки.
- * На уровне генератора она не должна отправлять самостоятельное сообщение.
+ * Генерирует обработчик для keyboard-ноды.
+ * При вызове обновляет inline-кнопки текущего сообщения (editMessageReplyMarkup).
  *
  * @param node - Узел keyboard
+ * @param nodes - Все узлы проекта (для resolving targets)
  * @returns Python-код обработчика keyboard-ноды
  */
-function generateKeyboardHandler(node: Node): string {
+function generateKeyboardHandler(node: Node, nodes?: Node[]): string {
   const safeName = node.id.replace(/[^a-zA-Z0-9_]/g, '_');
+  const buttons: any[] = node.data?.buttons || [];
 
-  return [
+  // Если нет кнопок — генерируем no-op
+  if (buttons.length === 0) {
+    return [
+      `@dp.callback_query(lambda c: c.data == "${node.id}")`,
+      `async def handle_callback_${safeName}(callback_query: types.CallbackQuery, state: FSMContext = None):`,
+      `    """Обработчик keyboard-ноды ${node.id} (пустая клавиатура)."""`,
+      `    try:`,
+      `        await callback_query.answer()`,
+      `        await callback_query.message.edit_reply_markup(reply_markup=None)`,
+      `    except Exception as e:`,
+      `        logging.error(f"❌ Ошибка в keyboard node ${node.id}: {e}")`,
+    ].join('\n');
+  }
+
+  // Строим кнопки и обновляем reply_markup
+  const lines: string[] = [
     `@dp.callback_query(lambda c: c.data == "${node.id}")`,
     `async def handle_callback_${safeName}(callback_query: types.CallbackQuery, state: FSMContext = None):`,
-    `    """Обработчик keyboard-ноды ${node.id} без самостоятельной отправки сообщения."""`,
+    `    """Обработчик keyboard-ноды ${node.id} — обновляет inline-кнопки сообщения."""`,
     `    try:`,
     `        user_id = callback_query.from_user.id`,
-    `        logging.info(f"⌨️ Keyboard node ${node.id} вызвана для пользователя {user_id}")`,
+    `        logging.info(f"⌨️ Keyboard node ${node.id}: обновляем кнопки для {user_id}")`,
+    `        await callback_query.answer()`,
+    `        all_user_vars = await init_all_user_vars(user_id)`,
+    `        builder = InlineKeyboardBuilder()`,
+  ];
+
+  for (const btn of buttons) {
+    const textExpr = `replace_variables_in_text(${JSON.stringify(btn.text || 'Кнопка')}, all_user_vars, {})`;
+    if (btn.action === 'url' && btn.url) {
+      lines.push(`        builder.add(InlineKeyboardButton(text=${textExpr}, url="${btn.url}"))`);
+    } else if (btn.action === 'goto' || btn.action === 'complete') {
+      const cbData = btn.customCallbackData || btn.target || btn.id || 'no_action';
+      lines.push(`        builder.add(InlineKeyboardButton(text=${textExpr}, callback_data="${cbData}"))`);
+    } else {
+      const cbData = btn.id || btn.target || 'btn';
+      lines.push(`        builder.add(InlineKeyboardButton(text=${textExpr}, callback_data="${cbData}"))`);
+    }
+  }
+
+  // Раскладка кнопок
+  const layout = node.data?.keyboardLayout;
+  if (node.data?.shuffleButtons) {
+    lines.push(`        # Перемешиваем кнопки`);
+    lines.push(`        import random as _rnd`);
+    lines.push(`        _btns_flat = [btn for row in builder._markup for btn in row]`);
+    lines.push(`        _rnd.shuffle(_btns_flat)`);
+    lines.push(`        builder = InlineKeyboardBuilder()`);
+    lines.push(`        for _btn in _btns_flat:`);
+    lines.push(`            builder.add(_btn)`);
+  }
+  if (layout && !layout.autoLayout && layout.rows?.length > 0) {
+    const counts = layout.rows.map((r: any) => (r.buttonIds || []).length).filter((n: number) => n > 0);
+    if (counts.length > 0) {
+      lines.push(`        builder.adjust(${counts.join(', ')})`);
+    }
+  } else {
+    const cols = layout?.columns || (buttons.length >= 6 ? 2 : 1);
+    lines.push(`        builder.adjust(${cols})`);
+  }
+
+  lines.push(
+    `        await callback_query.message.edit_reply_markup(reply_markup=builder.as_markup())`,
     `    except Exception as e:`,
     `        logging.error(f"❌ Ошибка в keyboard node ${node.id}: {e}")`,
-    `        return`,
-    `    return`,
-  ].join('\n');
+  );
+
+  return lines.join('\n');
 }
 
 function generateCommandEntryHandler(node: Node, callbackHandlerCode: string): string {
@@ -184,6 +251,7 @@ function generateCommandEntryHandler(node: Node, callbackHandlerCode: string): s
  * @param telegramFileIds - Словарь кэшированных Telegram file_id (ключ — URL, значение — file_id)
  * @param thumbnailFileIds - Словарь обложек видео (ключ — URL видео, значение — file_id обложки)
  * @param thumbnailUrls - Словарь прямых URL обложек видео (ключ — URL видео, значение — URL обложки)
+ * @param projectId - ID проекта (для поддержки get_content)
  * @returns Сгенерированный код обработчиков узлов
  *
  * @example
@@ -196,7 +264,8 @@ export function generateNodeHandlers(
   enableComments: boolean = true,
   telegramFileIds: Record<string, string> = {},
   thumbnailFileIds: Record<string, string> = {},
-  thumbnailUrls: Record<string, string> = {}
+  thumbnailUrls: Record<string, string> = {},
+  projectId: number | null = null,
 ): string {
   // Собираем код в массив строк
   const codeLines: string[] = [];
@@ -221,6 +290,7 @@ export function generateNodeHandlers(
         keyboardLayout: node.data?.keyboardLayout as KeyboardLayout | undefined,
         oneTimeKeyboard: node.data?.oneTimeKeyboard ?? false,
         resizeKeyboard: node.data?.resizeKeyboard ?? true,
+        shuffleButtons: node.data?.shuffleButtons || false,
         enableAutoTransition: autoTransition.enableAutoTransition,
         autoTransitionTo: autoTransition.autoTransitionTo,
         collectUserInput: node.data?.collectUserInput || false,
@@ -243,6 +313,7 @@ export function generateNodeHandlers(
         audioInputVariable: node.data?.audioInputVariable || '',
         documentInputVariable: node.data?.documentInputVariable || '',
         formatMode: (['html', 'markdown', 'none'].includes(node.data?.formatMode)) ? node.data.formatMode : (node.data?.markdown ? 'markdown' : undefined),
+        disableLinkPreview: !!node.data?.disableLinkPreview,
         imageUrl: media.imageUrl,
         documentUrl: media.documentUrl,
         videoUrl: media.videoUrl,
@@ -270,6 +341,7 @@ export function generateNodeHandlers(
         telegramFileIds: { ...(telegramFileIds || {}), ...((node.data as any)?.telegramFileIds || {}) },
         thumbnailFileIds: { ...(thumbnailFileIds || {}), ...((node.data as any)?.thumbnailFileIds || {}) },
         thumbnailUrls: { ...(thumbnailUrls || {}), ...((node.data as any)?.thumbnailUrls || {}) },
+        projectId,
       };
   };
 
@@ -288,7 +360,6 @@ export function generateNodeHandlers(
     contact: generateContactHandler,
     pin_message: generateMessageHandlerFromNode,
     unpin_message: generateMessageHandlerFromNode,
-    delete_message: generateMessageHandlerFromNode,
     /** Обработчик узла пересылки сообщений */
     forward_message: generateForwardMessageFromNode,
     /** Обработчик узла создания топика в форуме Telegram */
@@ -299,24 +370,13 @@ export function generateNodeHandlers(
     unban_user: generateUserHandlerFromNode,
     mute_user: generateUserHandlerFromNode,
     unmute_user: generateUserHandlerFromNode,
-    kick_user: generateUserHandlerFromNode,
+
     promote_user: generateUserHandlerFromNode,
     demote_user: generateUserHandlerFromNode,
     admin_rights: generateAdminRightsFromNode,
     broadcast: (node) => generateBroadcastHandler(node, nodes, enableComments),
-    keyboard: generateKeyboardHandler,
+    keyboard: (node) => generateKeyboardHandler(node, nodes),
     input: generateUserInputNodeHandler,
-    answer_callback_query: (node) => {
-      const entry = {
-        nodeId: node.id,
-        targetNodeId: (node.data as any)?.autoTransitionTo || '',
-        targetNodeType: nodes.find(n => n.id === (node.data as any)?.autoTransitionTo)?.type || 'message',
-        notificationText: (node.data as any)?.callbackNotificationText || '',
-        showAlert: (node.data as any)?.callbackShowAlert ?? false,
-        cacheTime: (node.data as any)?.callbackCacheTime ?? 0,
-      };
-      return generateAnswerCallbackQuery({ entries: [entry] });
-    },
     get_managed_bot_token: (node) => {
       const entry = {
         nodeId: node.id,
@@ -415,6 +475,20 @@ export function generateNodeHandlers(
     editMessageCode.split('\n').forEach(line => codeLines.push(line));
   }
 
+  // --- Обработчики узлов delete_message ---
+  const deleteMessageCode = generateDeleteMessageHandlers(nodes);
+  if (deleteMessageCode) {
+    codeLines.push('\n# Обработчики узлов delete_message');
+    deleteMessageCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов kick_user ---
+  const kickUserCode = generateKickUserHandlers(nodes);
+  if (kickUserCode) {
+    codeLines.push('\n# Обработчики узлов kick_user');
+    kickUserCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
   // --- Обработчики узлов set_variable ---
   const setVariableCode = generateSetVariableHandlers(nodes);
   if (setVariableCode) {
@@ -429,6 +503,13 @@ export function generateNodeHandlers(
     psqlQueryCode.split('\n').forEach(line => codeLines.push(line));
   }
 
+  // --- Обработчики узлов bot_table (работа с таблицами) ---
+  const botTableCode = generateBotTableHandlers(nodes);
+  if (botTableCode) {
+    codeLines.push('\n# Обработчики узлов bot_table (работа с таблицами)');
+    botTableCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
   // --- Обработчики узлов convert_file ---
   const convertFileCode = generateConvertFileHandlers(nodes);
   if (convertFileCode) {
@@ -436,9 +517,72 @@ export function generateNodeHandlers(
     convertFileCode.split('\n').forEach(line => codeLines.push(line));
   }
 
+  // --- Обработчики циклов (loop) ---
+  const loopCode = generateLoopHandlers(nodes);
+  if (loopCode) {
+    codeLines.push('\n# Обработчики циклов (loop)');
+    loopCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики параллельного запуска веток (parallel_split) ---
+  const parallelSplitCode = generateParallelSplitHandlers(nodes);
+  if (parallelSplitCode) {
+    codeLines.push('\n# Обработчики параллельного запуска веток (parallel_split)');
+    parallelSplitCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов задержки (delay) ---
+  const delayCode = generateDelayHandlers(nodes);
+  if (delayCode) {
+    codeLines.push('\n# Обработчики узлов задержки (delay)');
+    delayCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов answer_callback_query ---
+  const answerCallbackQueryCode = generateAnswerCallbackQueryHandlers(nodes);
+  if (answerCallbackQueryCode) {
+    codeLines.push('\n# Обработчики узлов answer_callback_query');
+    answerCallbackQueryCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Фоновые задачи (Schedule Trigger) ---
+  const scheduleTriggerCode = generateScheduleTriggerHandlers(nodes);
+  if (scheduleTriggerCode) {
+    codeLines.push('\n# ═══ Фоновые задачи (Schedule Trigger) ═══');
+    scheduleTriggerCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов userbot_message ---
+  const userbotMessageCode = generateUserbotMessageHandlers(nodes, projectId);
+  if (userbotMessageCode) {
+    codeLines.push('\n# Обработчики узлов userbot_message (Telethon)');
+    userbotMessageCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов userbot_click_button ---
+  const userbotClickButtonCode = generateUserbotClickButtonHandlers(nodes, projectId);
+  if (userbotClickButtonCode) {
+    codeLines.push('\n# Обработчики узлов userbot_click_button (Telethon)');
+    userbotClickButtonCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов userbot_inline_query ---
+  const userbotInlineQueryCode = generateUserbotInlineQueryHandlers(nodes, projectId);
+  if (userbotInlineQueryCode) {
+    codeLines.push('\n# Обработчики узлов userbot_inline_query (Telethon)');
+    userbotInlineQueryCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
+  // --- Обработчики узлов userbot_edit_trigger ---
+  const userbotEditTriggerCode = generateUserbotEditTriggerHandlers(nodes, projectId);
+  if (userbotEditTriggerCode) {
+    codeLines.push('\n# Обработчики узлов userbot_edit_trigger (Telethon)');
+    userbotEditTriggerCode.split('\n').forEach(line => codeLines.push(line));
+  }
+
   nodes.forEach((node: Node) => {
     // Пропускаем триггеры — они уже обработаны выше
-    if (node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'edit_message' || (node.type as any) === 'set_variable' || (node.type as any) === 'psql_query' || (node.type as any) === 'convert_file') {
+    if (node.type === 'command_trigger' || node.type === 'text_trigger' || node.type === 'incoming_message_trigger' || node.type === 'group_message_trigger' || (node.type as any) === 'callback_trigger' || (node.type as any) === 'incoming_callback_trigger' || (node.type as any) === 'outgoing_message_trigger' || (node.type as any) === 'managed_bot_updated_trigger' || (node.type as any) === 'edit_message' || (node.type as any) === 'set_variable' || (node.type as any) === 'psql_query' || (node.type as any) === 'bot_table' || (node.type as any) === 'convert_file' || (node.type as any) === 'loop' || (node.type as any) === 'delay' || (node.type as any) === 'schedule_trigger' || (node.type as any) === 'answer_callback_query' || (node.type as any) === 'userbot_message' || (node.type as any) === 'userbot_click_button' || (node.type as any) === 'userbot_inline_query' || (node.type as any) === 'userbot_edit_trigger' || (node.type as any) === 'kick_user' || (node.type as any) === 'parallel_split') {
       return;
     }
 

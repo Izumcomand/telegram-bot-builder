@@ -11,6 +11,9 @@
 USER_DATA_TTL = 3600
 # Метки времени последней активности пользователей
 _user_last_seen: dict[int, float] = {}
+# Кеш данных пользовательских таблиц проекта (Bot Tables)
+_bot_tables_cache: dict | None = None
+_bot_tables_cache_ts: float = 0
 
 
 async def cleanup_user_data() -> None:
@@ -89,12 +92,19 @@ async def check_auth(user_id: int) -> bool:
 async def init_all_user_vars(user_id: int) -> dict:
     """Собирает все переменные пользователя из памяти и БД.
     Память (user_data) всегда имеет приоритет над БД.
+    Глобальные переменные (user_data[0]) доступны всем как fallback.
 
     Returns:
         dict: Объединённый словарь всех переменных пользователя,
               включая плоские ключи вида "responseVar.field"
     """
     all_vars = dict(user_data.get(user_id, {}))
+    # Fallback: глобальные переменные из системного пользователя (schedule_trigger)
+    # Не перезаписывают пользовательские, не копируют служебные поля
+    if user_id != 0:
+        for _gk, _gv in user_data.get(0, {}).items():
+            if _gk not in all_vars and not _gk.startswith("_"):
+                all_vars[_gk] = _gv
     # Добавляем системные переменные бота — доступны в URL и текстах узлов
     # Не перезаписываем bot_token если пользователь уже ввёл свой токен
     if "bot_token" not in all_vars:
@@ -137,6 +147,71 @@ async def init_all_user_vars(user_id: int) -> dict:
     except Exception as e:
         logging.warning(f"⚠️ Не удалось загрузить переменные из БД: {e}")
 {%- endif %}
+    # Загружаем данные из пользовательских таблиц проекта (Bot Tables)
+    # Для таблиц с одной строкой: плоские переменные table.имя.колонка (обратная совместимость) + массив
+    # Для таблиц с несколькими строками: только массив table.имя = [{col: val, ...}, ...]
+    global _bot_tables_cache, _bot_tables_cache_ts
+    import time as _time_mod
+    # Сбрасываем кеш каждые 60 секунд
+    if _bot_tables_cache is not None and (_time_mod.time() - _bot_tables_cache_ts) > 60:
+        _bot_tables_cache = None
+    if _bot_tables_cache is None and db_pool:
+        try:
+            async with db_pool.acquire() as conn:
+                _tbl_rows = await conn.fetch("""
+                    SELECT bt.name AS table_name, btc.name AS col_name, btc.id AS col_id, btr.data, btr.row_index
+                    FROM bot_tables bt
+                    JOIN bot_table_columns btc ON btc.table_id = bt.id
+                    JOIN bot_table_rows btr ON btr.table_id = bt.id
+                    WHERE bt.project_id = $1
+                    ORDER BY bt.id, btr.row_index, btc.position
+                """, PROJECT_ID)
+                # Группируем данные: {table_name: {row_index: {col_name: value}}}
+                _tables_data = {}
+                for _r in _tbl_rows:
+                    _tname = _r["table_name"]
+                    _cname = _r["col_name"]
+                    _cid = str(_r["col_id"])
+                    _row_idx = _r["row_index"]
+                    _raw_data = _r["data"]
+                    if isinstance(_raw_data, str):
+                        import json as _json_tbl
+                        try:
+                            _data = _json_tbl.loads(_raw_data)
+                        except Exception:
+                            _data = {}
+                    elif isinstance(_raw_data, dict):
+                        _data = _raw_data
+                    else:
+                        _data = {}
+                    _val = _data.get(_cid, "")
+                    if _tname not in _tables_data:
+                        _tables_data[_tname] = {}
+                    if _row_idx not in _tables_data[_tname]:
+                        _tables_data[_tname][_row_idx] = {}
+                    _tables_data[_tname][_row_idx][_cname] = str(_val) if _val else ""
+                # Формируем кеш: массивы и плоские переменные
+                _cache = {}
+                for _tname, _rows_dict in _tables_data.items():
+                    # Собираем массив объектов (каждый объект = одна строка таблицы)
+                    _sorted_indices = sorted(_rows_dict.keys())
+                    _arr = [_rows_dict[_idx] for _idx in _sorted_indices]
+                    # Массив сохраняем всегда (как list Python для _flatten_dict)
+                    _cache[f"table.{_tname}"] = _arr
+                    # Для таблиц с одной строкой — также плоские переменные (обратная совместимость)
+                    if len(_arr) == 1:
+                        for _cname, _cval in _arr[0].items():
+                            _cache[f"table.{_tname}.{_cname}"] = _cval
+                _bot_tables_cache = _cache
+                _bot_tables_cache_ts = _time_mod.time()
+        except Exception as e:
+            logging.warning(f"⚠️ Не удалось загрузить Bot Tables: {e}")
+            _bot_tables_cache = {}
+    if _bot_tables_cache:
+        for _tk, _tv in _bot_tables_cache.items():
+            if _tk not in all_vars:
+                all_vars[_tk] = _tv
+
     # Рекурсивно разворачиваем dict/list-значения в плоские ключи для dot-notation подстановки.
     # Поддерживает произвольную глубину вложенности (до max_depth уровней).
     # Гарантирует что {a.b.c} найдётся через all_vars["a.b.c"] даже при глубокой вложенности.
@@ -174,6 +249,25 @@ async def save_message_to_api(user_id, message_type: str, message_text: str = No
 {%- endif %}
 
 
+_user_var_locks: dict = {}
+
+def _get_user_var_lock(user_id: int) -> asyncio.Lock:
+    """Возвращает asyncio.Lock пользователя для атомарных операций с переменными.
+
+    Используется set_variable (mode=expression) чтобы инкремент счётчика
+    из параллельных веток (parallel_split) не терял значения.
+
+    Args:
+        user_id (int): ID пользователя Telegram
+
+    Returns:
+        asyncio.Lock: Лок пользователя (создаётся при первом обращении)
+    """
+    if user_id not in _user_var_locks:
+        _user_var_locks[user_id] = asyncio.Lock()
+    return _user_var_locks[user_id]
+
+
 async def set_user_var(user_id: int, key: str, value) -> None:
     """Сохраняет переменную пользователя в память и БД (fire-and-forget).
 
@@ -189,7 +283,12 @@ async def set_user_var(user_id: int, key: str, value) -> None:
         user_data[user_id] = {}
     user_data[user_id][key] = value
 {%- if userDatabaseEnabled %}
-    # Fire-and-forget: запись в БД идёт в фоне, не блокируя ответ пользователю
+    # Источник трафика — в отдельные колонки bot_users (для аналитики)
+    if key == "deep_link_param":
+        asyncio.create_task(sync_user_attribution_to_db(user_id, deep_link_param=value))
+    elif key == "referrer_id":
+        asyncio.create_task(sync_user_attribution_to_db(user_id, referrer_id=value))
+    # Fire-and-forget: user_data JSON в фоне, не блокируя ответ пользователю
     asyncio.create_task(_persist_user_var(user_id, key, value))
 {%- endif %}
 
@@ -211,31 +310,47 @@ async def _persist_user_var(user_id: int, key: str, value) -> None:
 
 
 def _eval_expr(template: str, user_vars: dict):
-    """Вычисляет арифметическое выражение с подстановкой переменных из user_vars.
+    """Вычисляет выражение с подстановкой переменных из user_vars.
 
-    Сначала подставляет {переменные} как числа (или 0 если не найдено),
-    затем безопасно вычисляет выражение через ast.parse.
-    Разрешены только числа и арифметические операторы (+, -, *, /, //, %, **).
+    Поддерживает арифметику (+, -, *, /, //, %, **), логику (and, or, not),
+    тернарный if/else, сравнения, безопасные функции
+    (round, abs, int, float, min, max) и строковые методы
+    (replace, strip, lower, upper, startswith, endswith, split, join).
     При любой ошибке возвращает исходный шаблон без изменений.
 
     Args:
-        template: Строка-выражение, например "{step} + 1" или "{price} * {qty}"
+        template: Строка-выражение, например "{step} + 1" или "'{text}'.replace('a', 'b')"
         user_vars: Словарь переменных пользователя
 
     Returns:
-        Результат вычисления (число) или исходный шаблон при ошибке
+        Результат вычисления или исходный шаблон при ошибке
     """
     import re as _re_expr, ast as _ast_expr
 
     def _replacer(match):
-        path = match.group(1).split('.')
+        full_path = match.group(1)
+        path = full_path.split('.')
+        # Сначала пробуем полный путь как плоский ключ (напр. "sell_item.quantity")
+        if full_path in user_vars:
+            val = user_vars[full_path]
+            if val is None or val == '':
+                return '0'
+            return str(val)
+        # Пробуем составные плоские ключи (напр. "pilot.credits" → ищем "pilot.credits")
         val = user_vars
         for key in path:
             if isinstance(val, dict):
+                # Сначала пробуем оставшийся путь как плоский ключ
+                remaining = '.'.join(path[path.index(key):])
+                if remaining in val:
+                    val = val[remaining]
+                    break
                 val = val.get(key, 0)
             else:
                 return '0'
-        return str(val) if val is not None else '0'
+        if val is None or val == '':
+            return '0'
+        return str(val)
 
     expr = _re_expr.sub(r'\{([^}]+)\}', _replacer, template)
     try:
@@ -246,11 +361,37 @@ def _eval_expr(template: str, user_vars: dict):
             _ast_expr.Add, _ast_expr.Sub, _ast_expr.Mult, _ast_expr.Div,
             _ast_expr.FloorDiv, _ast_expr.Mod, _ast_expr.Pow,
             _ast_expr.USub, _ast_expr.UAdd,
+            _ast_expr.Call, _ast_expr.Name, _ast_expr.Load,
+            _ast_expr.Attribute, _ast_expr.Subscript, _ast_expr.Index, _ast_expr.Slice,
+            _ast_expr.IfExp, _ast_expr.Compare,
+            _ast_expr.Gt, _ast_expr.GtE, _ast_expr.Lt, _ast_expr.LtE, _ast_expr.Eq, _ast_expr.NotEq,
+            _ast_expr.BoolOp, _ast_expr.And, _ast_expr.Or, _ast_expr.Not,
+            _ast_expr.List, _ast_expr.Dict, _ast_expr.Tuple,
         )
+        _safe_funcs = {'round': round, 'abs': abs, 'int': int, 'float': float, 'min': min, 'max': max, 'str': str, 'thousands': lambda n: f"{int(float(n)):,}".replace(",", " ")}
+        _safe_methods = {'replace', 'strip', 'lstrip', 'rstrip', 'lower', 'upper', 'startswith', 'endswith', 'split', 'join', 'count', 'find', 'format'}
         for _node in _ast_expr.walk(tree):
             if not isinstance(_node, _allowed):
                 return template
-        return eval(compile(tree, '<expr>', 'eval'))
+            if isinstance(_node, _ast_expr.Name) and _node.id not in _safe_funcs and _node.id not in user_vars:
+                return template
+            if isinstance(_node, _ast_expr.Attribute) and _node.attr not in _safe_methods:
+                return template
+            if isinstance(_node, _ast_expr.Call):
+                if isinstance(_node.func, _ast_expr.Name) and _node.func.id not in _safe_funcs:
+                    return template
+                if isinstance(_node.func, _ast_expr.Attribute) and _node.func.attr not in _safe_methods:
+                    return template
+        # Собираем namespace: функции + переменные пользователя (приведённые к числам где возможно)
+        _eval_ns = dict(_safe_funcs)
+        for _vk, _vv in user_vars.items():
+            if _vk in _safe_funcs:
+                continue
+            try:
+                _eval_ns[_vk] = float(_vv) if '.' in str(_vv) else int(_vv)
+            except (ValueError, TypeError):
+                _eval_ns[_vk] = str(_vv) if _vv is not None else 0
+        return eval(compile(tree, '<expr>', 'eval'), {"__builtins__": {}}, _eval_ns)
     except Exception:
         return template
 
@@ -270,6 +411,102 @@ def replace_variables_in_text(text: str, variables: dict, filters: dict = None) 
         return text or ''
     import re as _re
     import json as _json
+    import time as _time_mod
+
+    # Обработка {__now_plus_N} — заменяем на текущий timestamp + N секунд
+    def _replace_now_plus(m):
+        _seconds = int(m.group(1))
+        return str(int(_time_mod.time()) + _seconds)
+    text = _re.sub(r'\{__now_plus_(\d+)\}', _replace_now_plus, text)
+    # Обработка {__now} и {__now__}
+    text = text.replace('{__now}', str(int(_time_mod.time())))
+    text = text.replace('{__now__}', str(int(_time_mod.time())))
+
+    # ─── Встроенные переменные (доступны всегда) ────────────────────────────
+    from datetime import datetime as _dt
+    import pytz as _pytz
+    import time as _time_mod
+    _msk = _pytz.timezone("Europe/Moscow")
+    _now_msk = _dt.now(_msk)
+    _now_ts = int(_time_mod.time())
+    variables.setdefault("now", _now_msk.strftime("%d.%m.%Y %H:%M:%S"))
+    variables.setdefault("today", _now_msk.strftime("%d.%m.%Y"))
+    variables.setdefault("time", _now_msk.strftime("%H:%M:%S"))
+    variables.setdefault("__now", str(_now_ts))
+    variables.setdefault("__now__", str(_now_ts))
+    # Динамические __now_plus_N (секунды)
+    for _k in list(variables.keys()):
+        pass  # уже заданы выше
+    # Поддержка {__now_plus_N} через regex в replace_variables_in_text ниже
+
+    # ─── Обработка итерации по массиву в тексте ─────────────────────────────
+    # Синтаксис в тексте пользователя: {каждый элемент} — см. документацию
+    # Внутри блока доступны поля текущего элемента + __index (с 1)
+    _each_open = "{" + "#each"  # разбиваем чтобы не конфликтовать с шаблонизатором
+    _each_pattern = _re.compile(r'\{' + r'#each\s+([\w.\[\]]+)\}(.*?)\{/each\}', _re.DOTALL)
+
+    def _expand_each(_m):
+        _var_path = _m.group(1)
+        _tpl = _m.group(2)
+        # Убираем ведущий перенос строки после открывающего тега
+        if _tpl.startswith('\n'):
+            _tpl = _tpl[1:]
+        # Убираем завершающий перенос строки перед {/each}
+        if _tpl.endswith('\n'):
+            _tpl = _tpl[:-1]
+        # Получаем массив из переменных
+        _items = variables.get(_var_path)
+        if _items is None:
+            # Пробуем через dot-notation
+            _segments = _var_path.split('.')
+            _obj = variables
+            for _seg in _segments:
+                if isinstance(_obj, dict):
+                    _obj = _obj.get(_seg)
+                else:
+                    _obj = None
+                    break
+            _items = _obj
+        if isinstance(_items, str):
+            try:
+                _items = _json.loads(_items)
+            except Exception:
+                _items = None
+        if not isinstance(_items, list):
+            return ''
+        _lines = []
+        for _i, _item in enumerate(_items):
+            _item_vars = dict(variables)  # копируем родительские переменные
+            if isinstance(_item, dict):
+                _item_vars.update(_item)
+            else:
+                _item_vars['value'] = str(_item) if _item is not None else ''
+            _item_vars['__index'] = str(_i + 1)
+            _item_vars['__index0'] = str(_i)
+            _line = replace_variables_in_text(_tpl, _item_vars, filters)
+            _lines.append(_line)
+        return '\n'.join(_lines)
+
+    # Раскрываем все each-блоки (поддержка вложенности через рекурсию)
+    _prev = None
+    result = text
+    while _prev != result:
+        _prev = result
+        result = _each_pattern.sub(_expand_each, result)
+
+    # ─── Обработка inline-выражений {=...} ─────────────────────────────────────
+    def _inline_expr_replacer(_m_expr):
+        """Вычисляет inline-выражение {=expr} через _eval_expr."""
+        _expr_body = _m_expr.group(1)
+        _expr_result = _eval_expr(_expr_body, variables)
+        # Если _eval_expr вернул исходный шаблон (ошибка/невалидное) — оставляем как есть
+        if str(_expr_result) == _expr_body:
+            return _m_expr.group(0)
+        return str(_expr_result)
+
+    result = _re.sub(r'\{=([^}]+)\}', _inline_expr_replacer, result)
+
+    # ─── Основная замена переменных {var} ─────────────────────────────────────
 
     def _resolve(var_path: str) -> str | None:
         """Разрешает переменную, поддерживая dot-notation и индексы массивов вида [0]"""
@@ -323,7 +560,12 @@ def replace_variables_in_text(text: str, variables: dict, filters: dict = None) 
         return resolved if resolved is not None else match.group(0)
 
     # Паттерн поддерживает: {var}, {a.b.c}, {a.b[0][1].c}
-    result = _re.sub(r'\{([\w.\[\]]+)\}', _replacer, text)
+    # Многопроходная замена: если после подстановки остались {}, делаем ещё проход (макс 3)
+    for _pass in range(3):
+        _new_result = _re.sub(r'\{([\w.\[\]]+)\}', _replacer, result)
+        if _new_result == result:
+            break
+        result = _new_result
     return result
 
 

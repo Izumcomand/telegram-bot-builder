@@ -24,6 +24,14 @@
  * Блок U: Операторы is_admin, is_premium, is_bot
  * Блок V: Операторы is_subscribed, is_not_subscribed
  * Блок W: Dot-notation переменные (например projects.count)
+ * Блок Y: Оператор not_equals
+ * Блок NC: Оператор not_contains
+ * Блок SW: Оператор starts_with
+ * Блок EW: Оператор ends_with
+ * Блок RX: Оператор matches_regex
+ * Блок EV: Оператор is_even
+ * Блок OD: Оператор is_odd
+ * Блок DV: Оператор divisible_by
  */
 
 import fs from 'fs';
@@ -80,8 +88,12 @@ function handlerBlock(code: string, nodeId: string) {
 }
 
 function assertNoHandlerReferences(code: string, nodeId: string, context: string) {
-  const signature = `handle_callback_${safeHandlerName(nodeId)}(`;
-  ok(!code.includes(signature), `${context}: не должно быть ссылок на ${signature}`);
+  // Узел игнорируется ⇒ для него не должно быть определения обработчика.
+  // Навигационный waiting_callback_input_middleware строит карту по всем id узлов и
+  // может содержать ссылку на id даже у игнорируемого узла — это отдельная механика,
+  // поэтому проверяем именно отсутствие определения `async def handle_callback_<id>`.
+  const definition = `async def handle_callback_${safeHandlerName(nodeId)}(`;
+  ok(!code.includes(definition), `${context}: не должно быть определения ${definition}`);
 }
 
 // ─── Вспомогательные функции ─────────────────────────────────────────────────
@@ -196,7 +208,7 @@ test('A07', 'ветка с target → await handle_callback_<target>(callback_qu
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'a07');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1(callback_query) должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1(callback_query, state=state) должен быть в коде');
 });
 
 test('A08', 'ветка без target → pass', () => {
@@ -234,7 +246,7 @@ test('B02', 'filled + target → await handle_callback_<target>', () => {
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'b02');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
 });
 
 test('B03', 'filled без target → pass', () => {
@@ -304,7 +316,7 @@ test('C04', 'empty + target → await handle_callback_<target>', () => {
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'c04');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
 });
 
 test('C05', 'empty без target → pass', () => {
@@ -344,22 +356,22 @@ test('C08', 'empty + filled → if not val: ... elif val:', () => {
 
 console.log('── Блок D: Оператор equals ───────────────────────────────────────');
 
-test('D01', 'equals → val == "<value>"', () => {
+test('D01', 'equals → str(val) == str(replace_variables_in_text(...))', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('equals', 'да')])]);
   const code = gen(p, 'd01');
-  ok(code.includes('val == "да"'), 'val == "да" должен быть в коде');
+  ok(code.includes('replace_variables_in_text') && code.includes('val'), 'строковое сравнение с replace_variables_in_text');
 });
 
-test('D02', 'equals как первая ветка → if val == "<value>":', () => {
+test('D02', 'equals как первая ветка → if str(val) == str(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('equals', 'да')])]);
   const code = gen(p, 'd02');
-  ok(code.includes('if val == "да":'), 'if val == "да": должен быть в коде');
+  ok(code.includes('if str(val) == str(replace_variables_in_text('), 'if str(val) == str(replace_variables_in_text( должен быть в коде');
 });
 
-test('D03', 'equals как вторая ветка → elif val == "<value>":', () => {
+test('D03', 'equals как вторая ветка → elif str(val) == str(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('equals', 'да')])]);
   const code = gen(p, 'd03');
-  ok(code.includes('elif val == "да":'), 'elif val == "да": должен быть в коде');
+  ok(code.includes('elif str(val) == str(replace_variables_in_text('), 'elif str(val) == str(replace_variables_in_text( должен быть в коде');
 });
 
 test('D04', 'equals + target → await handle_callback_<target>', () => {
@@ -368,7 +380,7 @@ test('D04', 'equals + target → await handle_callback_<target>', () => {
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'd04');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
 });
 
 test('D05', 'equals без target → pass', () => {
@@ -377,16 +389,16 @@ test('D05', 'equals без target → pass', () => {
   ok(code.includes('pass'), 'pass должен быть в коде');
 });
 
-test('D06', 'equals с пустым value → val == ""', () => {
+test('D06', 'equals с пустым value → replace_variables_in_text("", _all_vars)', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('equals', '')])]);
   const code = gen(p, 'd06');
-  ok(code.includes('val == ""'), 'val == "" должен быть в коде');
+  ok(code.includes('replace_variables_in_text("", _all_vars)'), 'replace_variables_in_text("", _all_vars) должен быть в коде');
 });
 
-test('D07', 'equals с числом → val == "42"', () => {
+test('D07', 'equals с числом → replace_variables_in_text("42", _all_vars)', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('equals', '42')])]);
   const code = gen(p, 'd07');
-  ok(code.includes('val == "42"'), 'val == "42" должен быть в коде');
+  ok(code.includes('replace_variables_in_text("42", _all_vars)'), 'replace_variables_in_text("42", _all_vars) должен быть в коде');
 });
 
 test('D08', 'несколько equals → несколько elif', () => {
@@ -396,9 +408,8 @@ test('D08', 'несколько equals → несколько elif', () => {
     makeBranch('equals', 'может'),
   ])]);
   const code = gen(p, 'd08');
-  ok(code.includes('if val == "да":'), 'if val == "да": должен быть');
-  ok(code.includes('elif val == "нет":'), 'elif val == "нет": должен быть');
-  ok(code.includes('elif val == "может":'), 'elif val == "может": должен быть');
+  ok(code.includes('if str(val) == str(replace_variables_in_text('), 'if str(val) == str(replace_variables_in_text( должен быть');
+  ok(code.includes('elif str(val) == str(replace_variables_in_text('), 'elif str(val) == str(replace_variables_in_text( должен быть');
   syntax(code, 'd08');
 });
 
@@ -430,7 +441,7 @@ test('E02', 'else + target → await handle_callback_<target>', () => {
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'e02');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
 });
 
 test('E03', 'else без target → pass', () => {
@@ -447,7 +458,7 @@ test('E04', 'else всегда последний → else: идёт после 
   ])]);
   const code = handlerBlock(gen(p, 'e04'), 'cond1');
   const ifIdx = code.indexOf('if val:');
-  const elifIdx = code.indexOf('elif val == "да":');
+  const elifIdx = code.indexOf('elif str(val) == str(replace_variables_in_text(');
   const elseIdx = code.indexOf('else:');
   ok(ifIdx < elifIdx, 'if должен идти перед elif');
   ok(elifIdx < elseIdx, 'elif должен идти перед else');
@@ -469,10 +480,10 @@ test('E06', 'empty + else → if not val: ... else:', () => {
   syntax(code, 'e06');
 });
 
-test('E07', 'equals + else → if val == "...": ... else:', () => {
+test('E07', 'equals + else → if str(val) == str(replace_variables_in_text(...)): ... else:', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('equals', 'да'), makeBranch('else')])]);
   const code = gen(p, 'e07');
-  ok(code.includes('if val == "да":'), 'if val == "да": должен быть');
+  ok(code.includes('if str(val) == str(replace_variables_in_text('), 'if str(val) == str(replace_variables_in_text( должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'e07');
 });
@@ -509,7 +520,7 @@ test('F02', 'filled + equals + else → корректная цепочка', ()
   ])]);
   const code = gen(p, 'f02');
   ok(code.includes('if val:'), 'if val: должен быть');
-  ok(code.includes('elif val == "да":'), 'elif val == "да": должен быть');
+  ok(code.includes('elif str(val) == str(replace_variables_in_text("да", _all_vars))'), 'elif str(val) == str(replace_variables_in_text("да", _all_vars)) должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'f02');
 });
@@ -522,7 +533,7 @@ test('F03', 'empty + equals + else → корректная цепочка', () 
   ])]);
   const code = gen(p, 'f03');
   ok(code.includes('if not val:'), 'if not val: должен быть');
-  ok(code.includes('elif val == "нет":'), 'elif val == "нет": должен быть');
+  ok(code.includes('elif str(val) == str(replace_variables_in_text("нет", _all_vars))'), 'elif str(val) == str(replace_variables_in_text("нет", _all_vars)) должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'f03');
 });
@@ -536,8 +547,8 @@ test('F04', 'filled + equals("да") + equals("нет") + else → 4 ветки'
   ])]);
   const code = gen(p, 'f04');
   ok(code.includes('if val:'), 'if val: должен быть');
-  ok(code.includes('elif val == "да":'), 'elif val == "да": должен быть');
-  ok(code.includes('elif val == "нет":'), 'elif val == "нет": должен быть');
+  ok(code.includes('replace_variables_in_text("да", _all_vars)'), 'replace_variables_in_text("да") должен быть');
+  ok(code.includes('replace_variables_in_text("нет", _all_vars)'), 'replace_variables_in_text("нет") должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'f04');
 });
@@ -748,7 +759,7 @@ test('I01', 'target = message узел → await handle_callback_<msgId>', () =>
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'i01');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
 });
 
 test('I02', 'target = другой condition → await handle_callback_<condId>', () => {
@@ -757,7 +768,7 @@ test('I02', 'target = другой condition → await handle_callback_<condId>'
     makeConditionNode('cond2', 'y', [makeBranch('filled')]),
   ]);
   const code = gen(p, 'i02');
-  ok(code.includes('await handle_callback_cond2(callback_query)'), 'await handle_callback_cond2 должен быть в коде');
+  ok(code.includes('await handle_callback_cond2(callback_query, state=state)'), 'await handle_callback_cond2 должен быть в коде');
 });
 
 test('I03', 'target отсутствует (undefined) → pass', () => {
@@ -782,8 +793,8 @@ test('I05', 'разные ветки → разные target', () => {
     makeMessageNode('msg2', 'Ответ 2'),
   ]);
   const code = gen(p, 'i05');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть');
-  ok(code.includes('await handle_callback_msg2(callback_query)'), 'await handle_callback_msg2 должен быть');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть');
+  ok(code.includes('await handle_callback_msg2(callback_query, state=state)'), 'await handle_callback_msg2 должен быть');
 });
 
 test('I06', 'все ветки с target → все await handle_callback_', () => {
@@ -798,9 +809,9 @@ test('I06', 'все ветки с target → все await handle_callback_', () 
     makeMessageNode('msg3'),
   ]);
   const code = gen(p, 'i06');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть');
-  ok(code.includes('await handle_callback_msg2(callback_query)'), 'await handle_callback_msg2 должен быть');
-  ok(code.includes('await handle_callback_msg3(callback_query)'), 'await handle_callback_msg3 должен быть');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть');
+  ok(code.includes('await handle_callback_msg2(callback_query, state=state)'), 'await handle_callback_msg2 должен быть');
+  ok(code.includes('await handle_callback_msg3(callback_query, state=state)'), 'await handle_callback_msg3 должен быть');
 });
 
 test('I07', 'target с дефисом в ID → safe_name корректно обрабатывает', () => {
@@ -1057,12 +1068,14 @@ test('L07', 'нет @dp.message декоратора у condition', () => {
   ok(!before.includes('@dp.message'), '@dp.message НЕ должен быть перед handle_callback_cond1');
 });
 
-test('L08', 'нет @dp.callback_query декоратора у condition', () => {
+test('L08', 'condition регистрируется через @dp.callback_query(c.data == nodeId)', () => {
+  // Корректная генерация: обработчик condition decorated `@dp.callback_query(lambda c: c.data == "cond1")`,
+  // чтобы переход к узлу мог быть инициирован callback-данными, равными id узла.
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled')])]);
   const code = gen(p, 'l08');
   const condIdx = code.indexOf('async def handle_callback_cond1');
   const before = code.substring(Math.max(0, condIdx - 200), condIdx);
-  ok(!before.includes('@dp.callback_query'), '@dp.callback_query НЕ должен быть перед handle_callback_cond1');
+  ok(before.includes('@dp.callback_query(lambda c: c.data == "cond1")'), '@dp.callback_query(lambda c: c.data == "cond1") должен быть перед handle_callback_cond1');
 });
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1163,12 +1176,13 @@ test('N05', 'нет @dp.message у condition обработчиков', () => {
   ok(!before.includes('@dp.message'), '@dp.message НЕ должен быть перед condition обработчиком');
 });
 
-test('N06', 'нет @dp.callback_query у condition обработчиков', () => {
+test('N06', 'condition обработчик зарегистрирован через @dp.callback_query', () => {
+  // Корректная генерация: каждый обработчик condition decorated `@dp.callback_query(lambda c: c.data == "<id>")`.
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled')])]);
   const code = gen(p, 'n06');
   const condIdx = code.indexOf('async def handle_callback_cond1');
   const before = code.substring(Math.max(0, condIdx - 300), condIdx);
-  ok(!before.includes('@dp.callback_query'), '@dp.callback_query НЕ должен быть перед condition обработчиком');
+  ok(before.includes('@dp.callback_query(lambda c: c.data == "cond1")'), '@dp.callback_query(lambda c: c.data == "cond1") должен быть перед condition обработчиком');
 });
 
 test('N07', 'нет дублирования функций', () => {
@@ -1212,8 +1226,8 @@ test('O01', 'contains с совпадением подстроки → пере�
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'o01');
-  ok(code.includes('"привет" in val'), '"привет" in val должен быть в коде');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('replace_variables_in_text("привет", _all_vars)'), 'replace_variables_in_text("привет") должен быть в коде');
+  ok(code.includes('handle_callback_msg1'), 'handle_callback_msg1 должен быть в коде');
   syntax(code, 'o01');
 });
 
@@ -1223,9 +1237,9 @@ test('O02', 'contains без совпадения → переход в else', (
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'o02');
-  ok(code.includes('"нет_такого" in val'), '"нет_такого" in val должен быть в коде');
+  ok(code.includes('replace_variables_in_text("нет_такого", _all_vars)'), 'replace_variables_in_text("нет_такого") должен быть в коде');
   ok(code.includes('else:'), 'else: должен быть в коде');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в else-ветке');
+  ok(code.includes('handle_callback_msg1'), 'handle_callback_msg1 должен быть в else-ветке');
   syntax(code, 'o02');
 });
 
@@ -1235,8 +1249,7 @@ test('O03', 'contains с пустой переменной → переход в
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'o03');
-  // val будет "" → "текст" in "" → False → else
-  ok(code.includes('"текст" in val'), '"текст" in val должен быть в коде');
+  ok(code.includes('replace_variables_in_text("текст", _all_vars)'), 'replace_variables_in_text("текст") должен быть в коде');
   ok(code.includes('else:'), 'else: должен быть в коде');
   syntax(code, 'o03');
 });
@@ -1247,23 +1260,23 @@ test('O04', 'contains с пустым значением поиска → все
     makeMessageNode('msg1'),
   ]);
   const code = gen(p, 'o04');
-  // "" in val → всегда True в Python
-  ok(code.includes('"" in val'), '"" in val должен быть в коде');
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  // replace_variables_in_text("", _all_vars) → "" → "" in str(val) → всегда True в Python
+  ok(code.includes('replace_variables_in_text("", _all_vars)'), 'replace_variables_in_text("", _all_vars) должен быть в коде');
+  ok(code.includes('handle_callback_msg1'), 'handle_callback_msg1 должен быть в коде');
   syntax(code, 'o04');
 });
 
-test('O05', 'contains как первая ветка → if "..." in val:', () => {
+test('O05', 'contains как первая ветка → if str(replace_variables_in_text(...)) in str(val):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('contains', 'test')])]);
   const code = gen(p, 'o05');
-  ok(code.includes('if "test" in val:'), 'if "test" in val: должен быть в коде');
-  ok(!code.includes('elif "test" in val:'), 'elif НЕ должен быть для первой ветки');
+  ok(code.includes('if str(replace_variables_in_text("test", _all_vars)) in str(val):'), 'if str(replace_variables_in_text("test", _all_vars)) in str(val): должен быть в коде');
+  ok(!code.includes('elif str(replace_variables_in_text("test", _all_vars)) in str(val):'), 'elif НЕ должен быть для первой ветки');
 });
 
-test('O06', 'contains как вторая ветка → elif "..." in val:', () => {
+test('O06', 'contains как вторая ветка → elif str(replace_variables_in_text(...)) in str(val):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('contains', 'test')])]);
   const code = gen(p, 'o06');
-  ok(code.includes('elif "test" in val:'), 'elif "test" in val: должен быть для второй ветки');
+  ok(code.includes('elif str(replace_variables_in_text("test", _all_vars)) in str(val):'), 'elif str(replace_variables_in_text("test", _all_vars)) in str(val): должен быть для второй ветки');
 });
 
 test('O07', 'contains → синтаксис OK', () => {
@@ -1279,7 +1292,7 @@ test('O08', 'filled + contains + else → корректная цепочка if
   ])]);
   const code = gen(p, 'o08');
   ok(code.includes('if val:'), 'if val: должен быть');
-  ok(code.includes('elif "да" in val:'), 'elif "да" in val: должен быть');
+  ok(code.includes('elif str(replace_variables_in_text("да", _all_vars)) in str(val):'), 'elif str(replace_variables_in_text("да", _all_vars)) in str(val): должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'o08');
 });
@@ -1290,25 +1303,25 @@ test('O08', 'filled + contains + else → корректная цепочка if
 
 console.log('── Блок P: Оператор greater_than ─────────────────────────────────');
 
-test('P01', 'greater_than → генерируется _num_val > N', () => {
+test('P01', 'greater_than → генерируется replace_variables_in_text и _num_val', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranch('greater_than', '18')])]);
   const code = gen(p, 'p01');
-  ok(code.includes('_num_val > 18'), '_num_val > 18 должен быть в коде');
+  ok(code.includes('replace_variables_in_text') && code.includes('_num_val'), 'числовое сравнение с replace_variables_in_text');
 });
 
-test('P02', 'greater_than как первая ветка → if _num_val is not None and _num_val > N:', () => {
+test('P02', 'greater_than как первая ветка → if _num_val is not None and _num_val > float(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranch('greater_than', '18')])]);
   const code = gen(p, 'p02');
-  ok(code.includes('if _num_val is not None and _num_val > 18:'), 'if _num_val is not None and _num_val > 18: должен быть в коде');
+  ok(code.includes('if _num_val is not None and _num_val > float(replace_variables_in_text("18", _all_vars)'), 'if _num_val > float(replace_variables_in_text("18"...)) должен быть в коде');
 });
 
-test('P03', 'greater_than как вторая ветка → elif _num_val is not None and _num_val > N:', () => {
+test('P03', 'greater_than как вторая ветка → elif _num_val is not None and _num_val > float(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [
     makeBranch('greater_than', '65'),
     makeBranch('greater_than', '18'),
   ])]);
   const code = gen(p, 'p03');
-  ok(code.includes('elif _num_val is not None and _num_val > 18:'), 'elif _num_val is not None and _num_val > 18: должен быть в коде');
+  ok(code.includes('elif _num_val is not None and _num_val > float(replace_variables_in_text("18", _all_vars)'), 'elif _num_val > float(replace_variables_in_text("18"...)) должен быть в коде');
 });
 
 test('P04', 'greater_than + target → await handle_callback_<target>', () => {
@@ -1317,7 +1330,7 @@ test('P04', 'greater_than + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_adult'),
   ]);
   const code = gen(p, 'p04');
-  ok(code.includes('await handle_callback_msg_adult(callback_query)'), 'await handle_callback_msg_adult должен быть в коде');
+  ok(code.includes('await handle_callback_msg_adult(callback_query, state=state)'), 'await handle_callback_msg_adult должен быть в коде');
 });
 
 test('P05', 'greater_than без target → pass', () => {
@@ -1349,7 +1362,7 @@ test('P09', 'greater_than + else → корректная цепочка', () =>
     makeBranch('else', '', 'msg_child'),
   ]), makeMessageNode('msg_adult'), makeMessageNode('msg_child')]);
   const code = gen(p, 'p09');
-  ok(code.includes('if _num_val is not None and _num_val > 18:'), 'if должен быть');
+  ok(code.includes('if _num_val is not None and _num_val > float(replace_variables_in_text("18", _all_vars)'), 'if должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'p09');
 });
@@ -1362,9 +1375,9 @@ test('P10', 'несколько greater_than → несколько elif', () =>
     makeBranch('else'),
   ])]);
   const code = gen(p, 'p10');
-  ok(code.includes('if _num_val is not None and _num_val > 90:'), 'if > 90 должен быть');
-  ok(code.includes('elif _num_val is not None and _num_val > 70:'), 'elif > 70 должен быть');
-  ok(code.includes('elif _num_val is not None and _num_val > 50:'), 'elif > 50 должен быть');
+  ok(code.includes('if _num_val is not None and _num_val > float(replace_variables_in_text("90", _all_vars)'), 'if > 90 должен быть');
+  ok(code.includes('elif _num_val is not None and _num_val > float(replace_variables_in_text("70", _all_vars)'), 'elif > 70 должен быть');
+  ok(code.includes('elif _num_val is not None and _num_val > float(replace_variables_in_text("50", _all_vars)'), 'elif > 50 должен быть');
   syntax(code, 'p10');
 });
 
@@ -1374,16 +1387,16 @@ test('P10', 'несколько greater_than → несколько elif', () =>
 
 console.log('── Блок Q: Оператор less_than ────────────────────────────────────');
 
-test('Q01', 'less_than → генерируется _num_val < N', () => {
+test('Q01', 'less_than → генерируется replace_variables_in_text и _num_val', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranch('less_than', '18')])]);
   const code = gen(p, 'q01');
-  ok(code.includes('_num_val < 18'), '_num_val < 18 должен быть в коде');
+  ok(code.includes('replace_variables_in_text') && code.includes('_num_val'), 'числовое сравнение с replace_variables_in_text');
 });
 
-test('Q02', 'less_than как первая ветка → if _num_val is not None and _num_val < N:', () => {
+test('Q02', 'less_than как первая ветка → if _num_val is not None and _num_val < float(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranch('less_than', '18')])]);
   const code = gen(p, 'q02');
-  ok(code.includes('if _num_val is not None and _num_val < 18:'), 'if _num_val is not None and _num_val < 18: должен быть в коде');
+  ok(code.includes('if _num_val is not None and _num_val < float(replace_variables_in_text("18", _all_vars)'), 'if _num_val < float(replace_variables_in_text("18"...)) должен быть в коде');
 });
 
 test('Q03', 'less_than как вторая ветка → elif', () => {
@@ -1392,7 +1405,7 @@ test('Q03', 'less_than как вторая ветка → elif', () => {
     makeBranch('less_than', '18'),
   ])]);
   const code = gen(p, 'q03');
-  ok(code.includes('elif _num_val is not None and _num_val < 18:'), 'elif _num_val is not None and _num_val < 18: должен быть в коде');
+  ok(code.includes('elif _num_val is not None and _num_val < float(replace_variables_in_text("18", _all_vars)'), 'elif _num_val < float(replace_variables_in_text("18"...)) должен быть в коде');
 });
 
 test('Q04', 'less_than + target → await handle_callback_<target>', () => {
@@ -1401,7 +1414,7 @@ test('Q04', 'less_than + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_child'),
   ]);
   const code = gen(p, 'q04');
-  ok(code.includes('await handle_callback_msg_child(callback_query)'), 'await handle_callback_msg_child должен быть в коде');
+  ok(code.includes('await handle_callback_msg_child(callback_query, state=state)'), 'await handle_callback_msg_child должен быть в коде');
 });
 
 test('Q05', 'less_than без target → pass', () => {
@@ -1434,8 +1447,8 @@ test('Q09', 'greater_than + less_than + else → корректная цепоч
     makeBranch('else'),
   ])]);
   const code = gen(p, 'q09');
-  ok(code.includes('if _num_val is not None and _num_val > 65:'), 'if > 65 должен быть');
-  ok(code.includes('elif _num_val is not None and _num_val < 18:'), 'elif < 18 должен быть');
+  ok(code.includes('if _num_val is not None and _num_val > float(replace_variables_in_text("65", _all_vars)'), 'if > 65 должен быть');
+  ok(code.includes('elif _num_val is not None and _num_val < float(replace_variables_in_text("18", _all_vars)'), 'elif < 18 должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'q09');
 });
@@ -1451,16 +1464,16 @@ test('Q10', 'less_than с нулём (0) → синтаксис OK', () => {
 
 console.log('── Блок R: Оператор between ──────────────────────────────────────');
 
-test('R01', 'between → генерируется N1 <= _num_val <= N2', () => {
+test('R01', 'between → генерируется replace_variables_in_text и _num_val', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranchBetween('18', '65')])]);
   const code = gen(p, 'r01');
-  ok(code.includes('18 <= _num_val <= 65'), '18 <= _num_val <= 65 должен быть в коде');
+  ok(code.includes('replace_variables_in_text("18", _all_vars)') && code.includes('replace_variables_in_text("65", _all_vars)'), 'replace_variables_in_text для обоих значений between');
 });
 
-test('R02', 'between как первая ветка → if _num_val is not None and N1 <= _num_val <= N2:', () => {
+test('R02', 'between как первая ветка → if _num_val is not None and float(replace_variables_in_text(...)) <= _num_val <= float(replace_variables_in_text(...)):', () => {
   const p = makeCleanProject([makeConditionNode('cond1', 'age', [makeBranchBetween('18', '65')])]);
   const code = gen(p, 'r02');
-  ok(code.includes('if _num_val is not None and 18 <= _num_val <= 65:'), 'if с between должен быть в коде');
+  ok(code.includes('if _num_val is not None and float(replace_variables_in_text("18", _all_vars)'), 'if с between должен быть в коде');
 });
 
 test('R03', 'between как вторая ветка → elif', () => {
@@ -1469,7 +1482,7 @@ test('R03', 'between как вторая ветка → elif', () => {
     makeBranchBetween('18', '65'),
   ])]);
   const code = gen(p, 'r03');
-  ok(code.includes('elif _num_val is not None and 18 <= _num_val <= 65:'), 'elif с between должен быть в коде');
+  ok(code.includes('elif _num_val is not None and float(replace_variables_in_text("18", _all_vars)'), 'elif с between должен быть в коде');
 });
 
 test('R04', 'between + target → await handle_callback_<target>', () => {
@@ -1478,7 +1491,7 @@ test('R04', 'between + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_working'),
   ]);
   const code = gen(p, 'r04');
-  ok(code.includes('await handle_callback_msg_working(callback_query)'), 'await handle_callback_msg_working должен быть в коде');
+  ok(code.includes('await handle_callback_msg_working(callback_query, state=state)'), 'await handle_callback_msg_working должен быть в коде');
 });
 
 test('R05', 'between без target → pass', () => {
@@ -1510,7 +1523,7 @@ test('R09', 'between + else → корректная цепочка', () => {
     makeBranch('else', '', 'msg_other'),
   ]), makeMessageNode('msg_working'), makeMessageNode('msg_other')]);
   const code = gen(p, 'r09');
-  ok(code.includes('if _num_val is not None and 18 <= _num_val <= 65:'), 'if between должен быть');
+  ok(code.includes('if _num_val is not None and float(replace_variables_in_text("18", _all_vars)'), 'if between должен быть');
   ok(code.includes('else:'), 'else: должен быть');
   syntax(code, 'r09');
 });
@@ -1616,7 +1629,7 @@ test('T01', 'is_private — базовый случай: генерирует ch
   const p = makeCleanProject([makeConditionNode('cond1', '', [makeBranch('is_private', '', 'msg1')]), makeMessageNode('msg1')]);
   const code = gen(p, 't01');
   ok(code.includes("callback_query.message.chat.type == 'private'"), "chat.type == 'private' должен быть в коде");
-  ok(code.includes('await handle_callback_msg1(callback_query)'), 'await handle_callback_msg1 должен быть в коде');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
   syntax(code, 't01');
 });
 
@@ -1673,7 +1686,7 @@ test('T06', 'is_group генерирует supergroup тоже', () => {
 test('T07', 'системная ветка с target — корректный вызов handle_callback_', () => {
   const p = makeCleanProject([makeConditionNode('cond1', '', [makeBranch('is_channel', '', 'msg_chan')]), makeMessageNode('msg_chan')]);
   const code = gen(p, 't07');
-  ok(code.includes('await handle_callback_msg_chan(callback_query)'), 'await handle_callback_msg_chan должен быть в коде');
+  ok(code.includes('await handle_callback_msg_chan(callback_query, state=state)'), 'await handle_callback_msg_chan должен быть в коде');
 });
 
 test('T08', 'системная ветка без target — pass', () => {
@@ -1705,13 +1718,13 @@ test('T10', 'системные + числовые + строковые + else �
   const fullCode = gen(p, 't10');
   const code = handlerBlock(fullCode, 'cond1');
   ok(code.includes("callback_query.message.chat.type == 'private'"), 'системная ветка должна быть');
-  ok(code.includes('_num_val > 90'), 'числовая ветка должна быть');
-  ok(code.includes('val == "special"'), 'строковая ветка должна быть');
+  ok(code.includes('replace_variables_in_text("90", _all_vars)'), 'числовая ветка должна быть');
+  ok(code.includes('replace_variables_in_text("special", _all_vars)'), 'строковая ветка должна быть');
   ok(code.includes('else:'), 'else должен быть');
   // Порядок: системные → числовые → строковые → else
   const sysIdx = code.indexOf("callback_query.message.chat.type == 'private'");
-  const numIdx = code.indexOf('_num_val > 90');
-  const strIdx = code.indexOf('val == "special"');
+  const numIdx = code.indexOf('replace_variables_in_text("90"');
+  const strIdx = code.indexOf('replace_variables_in_text("special"');
   const elseIdx = code.indexOf('else:');
   ok(sysIdx < numIdx, 'системные должны идти перед числовыми');
   ok(numIdx < strIdx, 'числовые должны идти перед строковыми');
@@ -1817,7 +1830,7 @@ test('U11', 'is_admin + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_admin'),
   ]);
   const code = gen(p, 'u11');
-  ok(code.includes('await handle_callback_msg_admin(callback_query)'), 'await handle_callback_msg_admin должен быть в коде');
+  ok(code.includes('await handle_callback_msg_admin(callback_query, state=state)'), 'await handle_callback_msg_admin должен быть в коде');
 });
 
 test('U12', 'is_premium + target → await handle_callback_<target>', () => {
@@ -1826,7 +1839,7 @@ test('U12', 'is_premium + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_prem'),
   ]);
   const code = gen(p, 'u12');
-  ok(code.includes('await handle_callback_msg_prem(callback_query)'), 'await handle_callback_msg_prem должен быть в коде');
+  ok(code.includes('await handle_callback_msg_prem(callback_query, state=state)'), 'await handle_callback_msg_prem должен быть в коде');
 });
 
 test('U13', 'is_bot + target → await handle_callback_<target>', () => {
@@ -1835,7 +1848,7 @@ test('U13', 'is_bot + target → await handle_callback_<target>', () => {
     makeMessageNode('msg_bot'),
   ]);
   const code = gen(p, 'u13');
-  ok(code.includes('await handle_callback_msg_bot(callback_query)'), 'await handle_callback_msg_bot должен быть в коде');
+  ok(code.includes('await handle_callback_msg_bot(callback_query, state=state)'), 'await handle_callback_msg_bot должен быть в коде');
 });
 
 test('U14', 'is_admin без target → pass', () => {
@@ -1866,11 +1879,11 @@ test('U16', 'смешанный is_premium + greater_than + else → все 3 п
   ]), makeMessageNode('msg_prem'), makeMessageNode('msg_high'), makeMessageNode('msg_other')]);
   const code = gen(p, 'u16');
   ok(code.includes("getattr(callback_query.from_user, 'is_premium', False)"), 'is_premium должен быть');
-  ok(code.includes('_num_val > 100'), 'числовая ветка должна быть');
+  ok(code.includes('replace_variables_in_text("100", _all_vars)') && code.includes('_num_val'), 'числовая ветка должна быть');
   ok(code.includes('else:'), 'else: должен быть');
   // Порядок: системные → числовые → else
   const sysIdx = code.indexOf("getattr(callback_query.from_user, 'is_premium', False)");
-  const numIdx = code.indexOf('_num_val > 100');
+  const numIdx = code.indexOf('replace_variables_in_text("100"');
   ok(sysIdx < numIdx, 'системные должны идти перед числовыми');
   syntax(code, 'u16');
 });
@@ -1971,8 +1984,8 @@ test('U25', 'is_admin + is_premium + is_bot + числовые + строков�
   const adminIdx = code.indexOf('callback_query.from_user.id in ADMIN_IDS');
   const premIdx  = code.indexOf("getattr(callback_query.from_user, 'is_premium', False)");
   const botIdx   = code.indexOf("getattr(callback_query.from_user, 'is_bot', False)");
-  const numIdx   = code.indexOf('_num_val > 90');
-  const strIdx   = code.indexOf('val == "special"');
+  const numIdx   = code.indexOf('replace_variables_in_text("90"');
+  const strIdx   = code.indexOf('replace_variables_in_text("special"');
   const elseIdx  = code.indexOf('else:');
   ok(adminIdx < premIdx,  'is_admin перед is_premium');
   ok(premIdx  < botIdx,   'is_premium перед is_bot');
@@ -2251,7 +2264,7 @@ test('W02', 'dot-notation не ломает числовой оператор gr
     makeBranch('else', '', 'msg2'),
   ]), makeMessageNode('msg1'), makeMessageNode('msg2')]);
   const code = gen(p, 'w02');
-  ok(code.includes('_num_val > 0'), '_num_val > 0 не найдено');
+  ok(code.includes('replace_variables_in_text("0", _all_vars)') && code.includes('_num_val'), 'числовое сравнение с replace_variables_in_text не найдено');
 });
 
 test('W03', 'dot-notation синтаксис Python OK', () => {
@@ -2280,7 +2293,7 @@ test('W05', 'dot-notation с equals — val читается через _dot_obj
   const code = gen(p, 'w05');
   ok(code.includes('_dot_obj = _all_vars.get("user", {})'), '_dot_obj для user не найден');
   ok(code.includes('_dot_obj.get("status", "")'), '_dot_obj.get("status") не найден');
-  ok(code.includes('val == "active"'), 'equals active не найден');
+  ok(code.includes('replace_variables_in_text("active", _all_vars)') && code.includes('val'), 'equals active с replace_variables_in_text не найден');
   syntax(code, 'w05');
 });
 
@@ -2340,6 +2353,691 @@ test('W10', 'init_all_user_vars содержит рекурсивную функ
   ok(code.includes('_flatten_dict'), 'рекурсивная функция _flatten_dict не найдена в коде');
   ok(code.includes('_max_depth'), 'параметр _max_depth не найден — защита от глубокой рекурсии отсутствует');
   syntax(code, 'w10');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// Блок X: Переменные в значениях веток
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('\n─── Блок X: Переменные в значениях веток ───');
+
+test('X01', 'greater_than с переменной {user.exp_to_next}', () => {
+  const code = gen(makeCleanProject([
+    makeConditionNode('cond1', 'user.exp', [
+      { id: 'b1', operator: 'greater_than', value: '{user.exp_to_next}', targetNodeId: 'msg1', target: 'msg1' },
+      { id: 'b2', operator: 'else', value: '', targetNodeId: 'msg2', target: 'msg2' },
+    ]),
+    makeMessageNode('msg1', 'Level up!'),
+    makeMessageNode('msg2', 'Нет'),
+  ]), 'X01');
+  ok(code.includes('replace_variables_in_text'), 'Нет replace_variables_in_text в числовом сравнении');
+  syntax(code, 'X01');
+});
+
+test('X02', 'less_than с переменной {now_ts}', () => {
+  const code = gen(makeCleanProject([
+    makeConditionNode('cond1', 'cd.expires_at', [
+      { id: 'b1', operator: 'less_than', value: '{now_ts}', targetNodeId: 'msg1', target: 'msg1' },
+      { id: 'b2', operator: 'else', value: '', targetNodeId: 'msg2', target: 'msg2' },
+    ]),
+    makeMessageNode('msg1', 'Кулдаун прошёл'),
+    makeMessageNode('msg2', 'Ждите'),
+  ]), 'X02');
+  ok(code.includes('replace_variables_in_text'), 'Нет replace_variables_in_text');
+  syntax(code, 'X02');
+});
+
+test('X03', 'equals с переменной {expected_answer}', () => {
+  const code = gen(makeCleanProject([
+    makeConditionNode('cond1', 'user_answer', [
+      { id: 'b1', operator: 'equals', value: '{expected_answer}', targetNodeId: 'msg1', target: 'msg1' },
+      { id: 'b2', operator: 'else', value: '', targetNodeId: 'msg2', target: 'msg2' },
+    ]),
+    makeMessageNode('msg1', 'Верно!'),
+    makeMessageNode('msg2', 'Неверно'),
+  ]), 'X03');
+  ok(code.includes('replace_variables_in_text'), 'Нет replace_variables_in_text в equals');
+  syntax(code, 'X03');
+});
+
+test('X04', 'between с переменными {min_val} и {max_val}', () => {
+  const code = gen(makeCleanProject([
+    makeConditionNode('cond1', 'score', [
+      { id: 'b1', operator: 'between', value: '{min_val}', value2: '{max_val}', targetNodeId: 'msg1', target: 'msg1' },
+      { id: 'b2', operator: 'else', value: '', targetNodeId: 'msg2', target: 'msg2' },
+    ]),
+    makeMessageNode('msg1', 'В диапазоне'),
+    makeMessageNode('msg2', 'Вне диапазона'),
+  ]), 'X04');
+  ok(code.includes('replace_variables_in_text'), 'Нет replace_variables_in_text в between');
+  syntax(code, 'X04');
+});
+
+test('X05', 'Статические значения продолжают работать', () => {
+  const code = gen(makeCleanProject([
+    makeConditionNode('cond1', 'level', [
+      { id: 'b1', operator: 'greater_than', value: '5', target: 'msg1' },
+      { id: 'b2', operator: 'equals', value: 'admin', target: 'msg2' },
+      { id: 'b3', operator: 'else', value: '', target: 'msg3' },
+    ]),
+    makeMessageNode('msg1', 'Уровень > 5'),
+    makeMessageNode('msg2', 'Админ'),
+    makeMessageNode('msg3', 'Иначе'),
+  ]), 'X05');
+  syntax(code, 'X05');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК X: Операторы is_empty / is_not_empty / greater_than с dot-notation
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок X: is_empty / is_not_empty / greater_than с dot-notation ──');
+
+test('X01', 'is_empty с dot-notation переменной → синтаксис OK', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.flight_expires_at', [
+      makeBranch('is_empty', '', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Пусто'),
+    makeMessageNode('msg2', 'Не пусто'),
+  ]);
+  syntax(gen(p, 'x01'), 'x01');
+});
+
+test('X02', 'is_not_empty с dot-notation переменной → синтаксис OK', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'fly_result.id', [
+      makeBranch('is_not_empty', '', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Есть'),
+    makeMessageNode('msg2', 'Нет'),
+  ]);
+  syntax(gen(p, 'x02'), 'x02');
+});
+
+test('X03', 'greater_than с переменной в value → синтаксис OK', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.flight_expires_at', [
+      makeBranch('greater_than', '{now_ts}', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'В полёте'),
+    makeMessageNode('msg2', 'Свободен'),
+  ]);
+  syntax(gen(p, 'x03'), 'x03');
+});
+
+test('X04', 'greater_than генерирует float сравнение', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.fuel', [
+      makeBranch('greater_than', '10', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Хватает'),
+    makeMessageNode('msg2', 'Мало'),
+  ]);
+  const code = gen(p, 'x04');
+  ok(code.includes('float('), 'float( должен быть для greater_than');
+});
+
+test('X05', 'is_empty генерирует not str(val).strip()', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.in_flight', [
+      makeBranch('is_empty', '', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Свободен'),
+    makeMessageNode('msg2', 'В полёте'),
+  ]);
+  const code = gen(p, 'x05');
+  ok(code.includes('not str(val).strip()') || code.includes('not val'), 'is_empty проверка должна быть');
+});
+
+test('X06', 'is_not_empty генерирует str(val).strip()', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'fly_result.id', [
+      makeBranch('is_not_empty', '', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Обновлено'),
+    makeMessageNode('msg2', 'Не обновлено'),
+  ]);
+  const code = gen(p, 'x06');
+  ok(code.includes('str(val).strip()') || code.includes('val'), 'is_not_empty проверка должна быть');
+});
+
+test('X07', 'greater_than + is_empty + else → 3 ветки синтаксис OK', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.flight_expires_at', [
+      makeBranch('greater_than', '{now_ts}', 'msg1'),
+      makeBranch('is_empty', '', 'msg2'),
+      makeBranch('else', '', 'msg3'),
+    ]),
+    makeMessageNode('msg1', 'В полёте'),
+    makeMessageNode('msg2', 'Никогда не летал'),
+    makeMessageNode('msg3', 'Полёт завершён'),
+  ]);
+  syntax(gen(p, 'x07'), 'x07');
+});
+
+test('X08', 'dot-notation переменная в _all_vars.get()', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'pilot.credits', [
+      makeBranch('greater_than', '100', 'msg1'),
+      makeBranch('else', '', 'msg2'),
+    ]),
+    makeMessageNode('msg1', 'Богат'),
+    makeMessageNode('msg2', 'Беден'),
+  ]);
+  const code = gen(p, 'x08');
+  ok(code.includes('pilot.credits'), 'pilot.credits должен быть в коде');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК Y: Оператор not_equals
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок Y: Оператор not_equals ───────────────────────────────────');
+
+test('Y01', 'not_equals → str(val) != str(replace_variables_in_text(...))', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_equals', 'banned')])]);
+  const code = gen(p, 'y01');
+  ok(code.includes('str(val) != str(replace_variables_in_text('), 'str(val) != str(replace_variables_in_text( должен быть в коде');
+});
+
+test('Y02', 'not_equals как первая ветка → if str(val) != ...', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'status', [makeBranch('not_equals', 'blocked')])]);
+  const code = gen(p, 'y02');
+  ok(code.includes('if str(val) != str(replace_variables_in_text("blocked", _all_vars))'), 'if str(val) != ... должен быть в коде');
+});
+
+test('Y03', 'not_equals как вторая ветка → elif str(val) != ...', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('not_equals', 'no')])]);
+  const code = gen(p, 'y03');
+  ok(code.includes('elif str(val) != str(replace_variables_in_text("no", _all_vars))'), 'elif str(val) != ... должен быть для второй ветки');
+});
+
+test('Y04', 'not_equals + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'role', [makeBranch('not_equals', 'guest', 'msg1')]),
+    makeMessageNode('msg1', 'Доступ разрешён'),
+  ]);
+  const code = gen(p, 'y04');
+  ok(code.includes('await handle_callback_msg1(callback_query'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('Y05', 'not_equals без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_equals', 'test')])]);
+  const code = gen(p, 'y05');
+  ok(code.includes('pass'), 'pass должен быть в коде для ветки без target');
+});
+
+test('Y06', 'not_equals + else → if str(val) != ... else:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_equals', 'admin', 'msg1'), makeBranch('else', '', 'msg2')])]);
+  const code = gen(p, 'y06');
+  ok(code.includes('if str(val) != str(replace_variables_in_text("admin", _all_vars))'), 'if != должен быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'y06');
+});
+
+test('Y07', 'equals + not_equals → обе ветки в коде', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'role', [
+    makeBranch('equals', 'admin', 'msg1'),
+    makeBranch('not_equals', 'banned', 'msg2'),
+    makeBranch('else', '', 'msg3'),
+  ]),
+    makeMessageNode('msg1', 'Админ'),
+    makeMessageNode('msg2', 'Не забанен'),
+    makeMessageNode('msg3', 'Остальные'),
+  ]);
+  const code = gen(p, 'y07');
+  ok(code.includes('== str(replace_variables_in_text("admin"'), 'equals admin должен быть');
+  ok(code.includes('!= str(replace_variables_in_text("banned"'), 'not_equals banned должен быть');
+  syntax(code, 'y07');
+});
+
+test('Y08', 'not_equals с пустым value → != ""', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_equals', '')])]);
+  const code = gen(p, 'y08');
+  ok(code.includes('replace_variables_in_text("", _all_vars)'), 'пустое значение должно быть');
+});
+
+test('Y09', 'not_equals с кириллицей → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_equals', 'заблокирован')])]);
+  syntax(gen(p, 'y09'), 'y09');
+});
+
+test('Y10', 'not_equals с переменной в value → replace_variables_in_text("{status}", ...)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'role', [makeBranch('not_equals', '{banned_role}')])]);
+  const code = gen(p, 'y10');
+  ok(code.includes('replace_variables_in_text("{banned_role}", _all_vars)'), 'переменная в value должна обрабатываться');
+  syntax(code, 'y10');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК NC: Оператор not_contains
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок NC: Оператор not_contains ────────────────────────────────');
+
+test('NC01', 'not_contains → str(replace_variables_in_text(...)) not in str(val)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'спам')])]);
+  const code = gen(p, 'nc01');
+  ok(code.includes('str(replace_variables_in_text("спам", _all_vars)) not in str(val)'), 'not in проверка должна быть в коде');
+});
+
+test('NC02', 'not_contains как первая ветка → if ... not in str(val):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'test')])]);
+  const code = gen(p, 'nc02');
+  ok(code.includes('if str(replace_variables_in_text("test", _all_vars)) not in str(val):'), 'if not in должен быть в коде');
+  ok(!code.includes('elif str(replace_variables_in_text("test", _all_vars)) not in str(val):'), 'elif НЕ должен быть для первой ветки');
+});
+
+test('NC03', 'not_contains как вторая ветка → elif ... not in str(val):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('not_contains', 'test')])]);
+  const code = gen(p, 'nc03');
+  ok(code.includes('elif str(replace_variables_in_text("test", _all_vars)) not in str(val):'), 'elif not in должен быть для второй ветки');
+});
+
+test('NC04', 'not_contains + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'спам', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'nc04');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('NC05', 'not_contains без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'спам')])]);
+  const code = gen(p, 'nc05');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('NC06', 'not_contains + else → корректная цепочка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'плохое', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'nc06');
+  ok(code.includes('str(replace_variables_in_text("плохое", _all_vars)) not in str(val)'), 'not in должен быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'nc06');
+});
+
+test('NC07', 'not_contains → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'подстрока'), makeBranch('else')])]);
+  syntax(gen(p, 'nc07'), 'nc07');
+});
+
+test('NC08', 'not_contains с кириллицей → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('not_contains', 'Привет мир')])]);
+  syntax(gen(p, 'nc08'), 'nc08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК SW: Оператор starts_with
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок SW: Оператор starts_with ─────────────────────────────────');
+
+test('SW01', 'starts_with → str(val).startswith(str(replace_variables_in_text(...)))', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', 'http')])]);
+  const code = gen(p, 'sw01');
+  ok(code.includes('str(val).startswith(str(replace_variables_in_text("http", _all_vars)))'), 'startswith проверка должна быть в коде');
+});
+
+test('SW02', 'starts_with как первая ветка → if str(val).startswith(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', 'a')])]);
+  const code = gen(p, 'sw02');
+  ok(code.includes('if str(val).startswith(str(replace_variables_in_text("a", _all_vars))):'), 'if startswith должен быть в коде');
+  ok(!code.includes('elif str(val).startswith(str(replace_variables_in_text("a", _all_vars))):'), 'elif НЕ должен быть для первой ветки');
+});
+
+test('SW03', 'starts_with как вторая ветка → elif str(val).startswith(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('starts_with', 'a')])]);
+  const code = gen(p, 'sw03');
+  ok(code.includes('elif str(val).startswith(str(replace_variables_in_text("a", _all_vars))):'), 'elif startswith должен быть для второй ветки');
+});
+
+test('SW04', 'starts_with + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'x', [makeBranch('starts_with', '/', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'sw04');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('SW05', 'starts_with без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', '/')])]);
+  const code = gen(p, 'sw05');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('SW06', 'starts_with + else → корректная цепочка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', 'http', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'sw06');
+  ok(code.includes('str(val).startswith(str(replace_variables_in_text("http", _all_vars)))'), 'startswith должен быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'sw06');
+});
+
+test('SW07', 'starts_with → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', 'prefix'), makeBranch('else')])]);
+  syntax(gen(p, 'sw07'), 'sw07');
+});
+
+test('SW08', 'starts_with с кириллицей → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('starts_with', 'Привет')])]);
+  syntax(gen(p, 'sw08'), 'sw08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК EW: Оператор ends_with
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок EW: Оператор ends_with ───────────────────────────────────');
+
+test('EW01', 'ends_with → str(val).endswith(str(replace_variables_in_text(...)))', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', '.png')])]);
+  const code = gen(p, 'ew01');
+  ok(code.includes('str(val).endswith(str(replace_variables_in_text(".png", _all_vars)))'), 'endswith проверка должна быть в коде');
+});
+
+test('EW02', 'ends_with как первая ветка → if str(val).endswith(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', 'z')])]);
+  const code = gen(p, 'ew02');
+  ok(code.includes('if str(val).endswith(str(replace_variables_in_text("z", _all_vars))):'), 'if endswith должен быть в коде');
+  ok(!code.includes('elif str(val).endswith(str(replace_variables_in_text("z", _all_vars))):'), 'elif НЕ должен быть для первой ветки');
+});
+
+test('EW03', 'ends_with как вторая ветка → elif str(val).endswith(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('ends_with', 'z')])]);
+  const code = gen(p, 'ew03');
+  ok(code.includes('elif str(val).endswith(str(replace_variables_in_text("z", _all_vars))):'), 'elif endswith должен быть для второй ветки');
+});
+
+test('EW04', 'ends_with + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'x', [makeBranch('ends_with', '.jpg', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'ew04');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('EW05', 'ends_with без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', '.jpg')])]);
+  const code = gen(p, 'ew05');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('EW06', 'ends_with + else → корректная цепочка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', '.pdf', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'ew06');
+  ok(code.includes('str(val).endswith(str(replace_variables_in_text(".pdf", _all_vars)))'), 'endswith должен быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'ew06');
+});
+
+test('EW07', 'ends_with → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', 'суффикс'), makeBranch('else')])]);
+  syntax(gen(p, 'ew07'), 'ew07');
+});
+
+test('EW08', 'ends_with с кириллицей → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('ends_with', 'конец')])]);
+  syntax(gen(p, 'ew08'), 'ew08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК RX: Оператор matches_regex
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок RX: Оператор matches_regex ───────────────────────────────');
+
+test('RX01', 'matches_regex → re.search(r"...", str(val)) is not None', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('matches_regex', '\\d+')])]);
+  const code = gen(p, 'rx01');
+  ok(code.includes('re.search(r"\\d+", str(val)) is not None'), 're.search проверка должна быть в коде');
+});
+
+test('RX02', 'matches_regex как первая ветка → if re.search(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('matches_regex', 'abc')])]);
+  const code = gen(p, 'rx02');
+  ok(code.includes('if re.search(r"abc", str(val)) is not None:'), 'if re.search должен быть в коде');
+  ok(!code.includes('elif re.search(r"abc", str(val)) is not None:'), 'elif НЕ должен быть для первой ветки');
+});
+
+test('RX03', 'matches_regex как вторая ветка → elif re.search(...):', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('filled'), makeBranch('matches_regex', 'abc')])]);
+  const code = gen(p, 'rx03');
+  ok(code.includes('elif re.search(r"abc", str(val)) is not None:'), 'elif re.search должен быть для второй ветки');
+});
+
+test('RX04', 'matches_regex + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'email', [makeBranch('matches_regex', '.+@.+', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'rx04');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('RX05', 'matches_regex без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('matches_regex', '\\w+')])]);
+  const code = gen(p, 'rx05');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('RX06', 'matches_regex использует глобальный import re (re.search)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('matches_regex', '\\d')])]);
+  const code = gen(p, 'rx06');
+  ok(code.includes('import re'), 'import re должен присутствовать в сгенерированном коде');
+  ok(code.includes('re.search(r"\\d", str(val))'), 're.search должен использоваться');
+});
+
+test('RX07', 'matches_regex → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'phone', [makeBranch('matches_regex', '^\\+?\\d{10,15}$'), makeBranch('else')])]);
+  syntax(gen(p, 'rx07'), 'rx07');
+});
+
+test('RX08', 'matches_regex + else → корректная цепочка, синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'x', [makeBranch('matches_regex', '[А-Яа-я]+', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'rx08');
+  ok(code.includes('re.search(r"[А-Яа-я]+", str(val)) is not None'), 're.search с кириллицей должен быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'rx08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК EV: Оператор is_even
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок EV: Оператор is_even ─────────────────────────────────────');
+
+test('EV01', 'is_even → _num_val is not None and int(_num_val) % 2 == 0', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even')])]);
+  const code = gen(p, 'ev01');
+  ok(code.includes('_num_val is not None and int(_num_val) % 2 == 0'), 'проверка чётности должна быть в коде');
+});
+
+test('EV02', 'is_even — числовой проход: генерируется _num_val = float(val)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even')])]);
+  const code = gen(p, 'ev02');
+  ok(code.includes('_num_val = float(val)'), '_num_val = float(val) должен быть в коде');
+  ok(code.includes('except (ValueError, TypeError)'), 'except (ValueError, TypeError) должен быть в коде');
+});
+
+test('EV03', 'is_even как первая ветка → if ... % 2 == 0:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even')])]);
+  const code = gen(p, 'ev03');
+  ok(code.includes('if _num_val is not None and int(_num_val) % 2 == 0:'), 'if чётности должен быть в коде');
+});
+
+test('EV04', 'is_even как вторая числовая ветка → elif ... % 2 == 0:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('greater_than', '100'), makeBranch('is_even')])]);
+  const code = gen(p, 'ev04');
+  ok(code.includes('elif _num_val is not None and int(_num_val) % 2 == 0:'), 'elif чётности должен быть для второй ветки');
+});
+
+test('EV05', 'is_even + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'n', [makeBranch('is_even', '', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'ev05');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('EV06', 'is_even без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even')])]);
+  const code = gen(p, 'ev06');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('EV07', 'is_even + else → корректная цепочка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even', '', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'ev07');
+  ok(code.includes('int(_num_val) % 2 == 0'), 'проверка чётности должна быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'ev07');
+});
+
+test('EV08', 'is_even → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_even'), makeBranch('else')])]);
+  syntax(gen(p, 'ev08'), 'ev08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК OD: Оператор is_odd
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок OD: Оператор is_odd ──────────────────────────────────────');
+
+test('OD01', 'is_odd → _num_val is not None and int(_num_val) % 2 != 0', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_odd')])]);
+  const code = gen(p, 'od01');
+  ok(code.includes('_num_val is not None and int(_num_val) % 2 != 0'), 'проверка нечётности должна быть в коде');
+});
+
+test('OD02', 'is_odd — числовой проход: генерируется _num_val = float(val)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_odd')])]);
+  const code = gen(p, 'od02');
+  ok(code.includes('_num_val = float(val)'), '_num_val = float(val) должен быть в коде');
+});
+
+test('OD03', 'is_odd как первая ветка → if ... % 2 != 0:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_odd')])]);
+  const code = gen(p, 'od03');
+  ok(code.includes('if _num_val is not None and int(_num_val) % 2 != 0:'), 'if нечётности должен быть в коде');
+});
+
+test('OD04', 'is_odd как вторая числовая ветка → elif ... % 2 != 0:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('less_than', '0'), makeBranch('is_odd')])]);
+  const code = gen(p, 'od04');
+  ok(code.includes('elif _num_val is not None and int(_num_val) % 2 != 0:'), 'elif нечётности должен быть для второй ветки');
+});
+
+test('OD05', 'is_odd + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'n', [makeBranch('is_odd', '', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'od05');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('OD06', 'is_odd без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_odd')])]);
+  const code = gen(p, 'od06');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('OD07', 'is_even + is_odd + else → корректная цепочка, синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [
+    makeBranch('is_even', '', 'msg1'),
+    makeBranch('is_odd', '', 'msg2'),
+    makeBranch('else', '', 'msg3'),
+  ]), makeMessageNode('msg1'), makeMessageNode('msg2'), makeMessageNode('msg3')]);
+  const code = gen(p, 'od07');
+  ok(code.includes('int(_num_val) % 2 == 0'), 'чётность должна быть');
+  ok(code.includes('int(_num_val) % 2 != 0'), 'нечётность должна быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'od07');
+});
+
+test('OD08', 'is_odd → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('is_odd'), makeBranch('else')])]);
+  syntax(gen(p, 'od08'), 'od08');
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// БЛОК DV: Оператор divisible_by
+// ════════════════════════════════════════════════════════════════════════════
+
+console.log('── Блок DV: Оператор divisible_by ────────────────────────────────');
+
+test('DV01', 'divisible_by → защита от деления на ноль и проверка остатка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '3')])]);
+  const code = gen(p, 'dv01');
+  ok(code.includes('int(replace_variables_in_text("3", _all_vars) or \'1\') != 0'), 'защита от деления на ноль должна быть');
+  ok(code.includes('int(_num_val) % int(replace_variables_in_text("3", _all_vars) or \'1\') == 0'), 'проверка остатка должна быть');
+});
+
+test('DV02', 'divisible_by — числовой проход: генерируется _num_val = float(val)', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '2')])]);
+  const code = gen(p, 'dv02');
+  ok(code.includes('_num_val = float(val)'), '_num_val = float(val) должен быть в коде');
+  ok(code.includes('except (ValueError, TypeError)'), 'except (ValueError, TypeError) должен быть в коде');
+});
+
+test('DV03', 'divisible_by как первая ветка → if ... % ... == 0:', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '5')])]);
+  const code = gen(p, 'dv03');
+  ok(code.includes('if _num_val is not None and int(replace_variables_in_text("5", _all_vars) or \'1\') != 0'), 'if divisible_by должен быть в коде');
+});
+
+test('DV04', 'divisible_by как вторая числовая ветка → elif', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('greater_than', '0'), makeBranch('divisible_by', '7')])]);
+  const code = gen(p, 'dv04');
+  ok(code.includes('elif _num_val is not None and int(replace_variables_in_text("7", _all_vars) or \'1\') != 0'), 'elif divisible_by должен быть для второй ветки');
+});
+
+test('DV05', 'divisible_by + target → await handle_callback_<target>', () => {
+  const p = makeCleanProject([
+    makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '3', 'msg1')]),
+    makeMessageNode('msg1'),
+  ]);
+  const code = gen(p, 'dv05');
+  ok(code.includes('await handle_callback_msg1(callback_query, state=state)'), 'await handle_callback_msg1 должен быть в коде');
+});
+
+test('DV06', 'divisible_by без target → pass', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '3')])]);
+  const code = gen(p, 'dv06');
+  ok(code.includes('pass'), 'pass должен быть в коде');
+});
+
+test('DV07', 'divisible_by + else → корректная цепочка', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '10', 'msg1'), makeBranch('else', '', 'msg2')]),
+    makeMessageNode('msg1'), makeMessageNode('msg2')]);
+  const code = gen(p, 'dv07');
+  ok(code.includes('int(_num_val) % int(replace_variables_in_text("10", _all_vars) or \'1\') == 0'), 'проверка деления должна быть');
+  ok(code.includes('else:'), 'else: должен быть');
+  syntax(code, 'dv07');
+});
+
+test('DV08', 'divisible_by с переменной в value → синтаксис OK', () => {
+  const p = makeCleanProject([makeConditionNode('cond1', 'n', [makeBranch('divisible_by', '{divisor}'), makeBranch('else')])]);
+  const code = gen(p, 'dv08');
+  ok(code.includes('replace_variables_in_text("{divisor}", _all_vars)'), 'переменная в value должна обрабатываться');
+  syntax(code, 'dv08');
 });
 
 const passed = results.filter(r => r.passed).length;

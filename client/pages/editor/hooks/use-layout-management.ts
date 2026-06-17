@@ -41,8 +41,8 @@ function createBaseConfig(isMobile: boolean, currentTab: string): SimpleLayoutCo
 
   return {
     elements: [
-      /** Шапка видима по умолчанию */
-      { id: 'header', type: 'header', name: 'Шапка', position: 'top', size: headerSize, visible: true },
+      /** Шапка видима только на вкладках редактора и кода */
+      { id: 'header', type: 'header', name: 'Шапка', position: 'top', size: headerSize, visible: currentTab === 'editor' || currentTab === 'export' },
       { id: 'sidebar', type: 'sidebar', name: 'Боковая панель', position: 'left', size: 20, visible: showPanels },
       { id: 'canvas', type: 'canvas', name: 'Холст', position: 'center', size: 30, visible: showCanvas },
       { id: 'properties', type: 'properties', name: 'Свойства', position: 'right', size: 25, visible: false },
@@ -84,8 +84,9 @@ export function useLayoutManager(
           return el;
         }
 
-        // Для header применяем ручные изменения всегда
+        // Для header применяем ручные изменения только на вкладках editor и export
         if (el.id === 'header') {
+          if (currentTab !== 'editor' && currentTab !== 'export') return el;
           const manual = manualVisibility.get(el.id);
           if (manual !== undefined) {
             return { ...el, visible: manual };
@@ -117,6 +118,10 @@ export function useLayoutManager(
   const flexibleLayoutConfigRef = useRef(flexibleLayoutConfig);
   flexibleLayoutConfigRef.current = flexibleLayoutConfig;
 
+  /** Ref для текущей вкладки внутри setFlexibleLayoutConfig */
+  const currentTabRef = useRef(currentTab);
+  currentTabRef.current = currentTab;
+
   const setFlexibleLayoutConfig = useCallback((updater: React.SetStateAction<SimpleLayoutConfig>) => {
     setManualVisibility(prev => {
       const newMap = new Map(prev);
@@ -126,7 +131,10 @@ export function useLayoutManager(
         ? updater(flexibleLayoutConfigRef.current)
         : updater;
       
+      const tab = currentTabRef.current;
       config.elements.forEach(el => {
+        // Не сохраняем header в manualVisibility если вкладка не editor/export
+        if (el.id === 'header' && tab !== 'editor' && tab !== 'export') return;
         // Сохраняем только ручные изменения видимости
         if (el.id !== 'dialog' && el.id !== 'userDetails') {
           newMap.set(el.id, el.visible);
